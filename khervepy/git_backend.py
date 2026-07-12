@@ -1,0 +1,251 @@
+"""Git and GitHub plumbing for KhervePY.
+
+Local repository operations shell out to the ``git`` executable; GitHub API
+operations (fork, list repositories, current user) use the REST API over the
+standard library so the app has no networking dependencies.
+
+Copyright (C) 2026 Gwilherm Kerherve
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import subprocess
+from dataclasses import dataclass
+from typing import Optional
+from urllib import error, request
+
+GITHUB_API = "https://api.github.com"
+
+
+class GitError(RuntimeError):
+    """Raised when a git command exits non-zero."""
+
+
+@dataclass
+class GitStatus:
+    branch: str
+    ahead: int
+    behind: int
+    staged: list[tuple[str, str]]
+    unstaged: list[tuple[str, str]]
+    untracked: list[str]
+
+    @property
+    def is_clean(self) -> bool:
+        return not (self.staged or self.unstaged or self.untracked)
+
+
+# --- Local git --------------------------------------------------------------
+def run_git(args: list[str], cwd: str, check: bool = True) -> str:
+    """Run ``git <args>`` inside ``cwd`` and return stdout."""
+    proc = subprocess.run(
+        ["git", *args],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+    )
+    if check and proc.returncode != 0:
+        raise GitError(proc.stderr.strip() or proc.stdout.strip() or "git failed")
+    return proc.stdout
+
+
+def is_repo(path: str) -> bool:
+    if not path or not os.path.isdir(path):
+        return False
+    try:
+        out = run_git(["rev-parse", "--is-inside-work-tree"], path)
+        return out.strip() == "true"
+    except GitError:
+        return False
+
+
+def repo_root(path: str) -> Optional[str]:
+    try:
+        return run_git(["rev-parse", "--show-toplevel"], path).strip()
+    except GitError:
+        return None
+
+
+def current_branch(path: str) -> str:
+    try:
+        return run_git(["rev-parse", "--abbrev-ref", "HEAD"], path).strip()
+    except GitError:
+        return ""
+
+
+def status(path: str) -> GitStatus:
+    """Parse ``git status --porcelain=v1 -b`` into a structured result."""
+    out = run_git(["status", "--porcelain=v1", "-b"], path)
+    branch, ahead, behind = "", 0, 0
+    staged: list[tuple[str, str]] = []
+    unstaged: list[tuple[str, str]] = []
+    untracked: list[str] = []
+
+    for line in out.splitlines():
+        if line.startswith("##"):
+            head = line[3:]
+            branch = head.split("...")[0].strip()
+            m_a = re.search(r"ahead (\d+)", head)
+            m_b = re.search(r"behind (\d+)", head)
+            ahead = int(m_a.group(1)) if m_a else 0
+            behind = int(m_b.group(1)) if m_b else 0
+            continue
+        if len(line) < 3:
+            continue
+        x, y, name = line[0], line[1], line[3:]
+        if x == "?" and y == "?":
+            untracked.append(name)
+            continue
+        if x != " " and x != "?":
+            staged.append((x, name))
+        if y != " " and y != "?":
+            unstaged.append((y, name))
+    return GitStatus(branch, ahead, behind, staged, unstaged, untracked)
+
+
+def branches(path: str) -> list[str]:
+    out = run_git(["branch", "--format=%(refname:short)"], path)
+    return [b.strip() for b in out.splitlines() if b.strip()]
+
+
+def stage(path: str, files: list[str]) -> None:
+    run_git(["add", "--", *files], path)
+
+
+def stage_all(path: str) -> None:
+    run_git(["add", "-A"], path)
+
+
+def unstage(path: str, files: list[str]) -> None:
+    run_git(["reset", "HEAD", "--", *files], path)
+
+
+def commit(path: str, message: str) -> str:
+    return run_git(["commit", "-m", message], path)
+
+
+def checkout(path: str, branch: str, create: bool = False) -> None:
+    args = ["checkout", "-b", branch] if create else ["checkout", branch]
+    run_git(args, path)
+
+
+def pull(path: str, remote: str = "origin", branch: Optional[str] = None) -> str:
+    args = ["pull", remote]
+    if branch:
+        args.append(branch)
+    return run_git(args, path)
+
+
+def push(path: str, remote: str = "origin", branch: Optional[str] = None,
+         set_upstream: bool = False) -> str:
+    args = ["push"]
+    if set_upstream and branch:
+        args += ["-u", remote, branch]
+    elif branch:
+        args += [remote, branch]
+    else:
+        args.append(remote)
+    return run_git(args, path)
+
+
+def log(path: str, limit: int = 30) -> list[tuple[str, str, str]]:
+    """Return ``(short_hash, author, subject)`` tuples for recent commits."""
+    fmt = "%h\x1f%an\x1f%s"
+    out = run_git(["log", f"-{limit}", f"--pretty=format:{fmt}"], path, check=False)
+    rows = []
+    for line in out.splitlines():
+        parts = line.split("\x1f")
+        if len(parts) == 3:
+            rows.append((parts[0], parts[1], parts[2]))
+    return rows
+
+
+def diff(path: str, staged: bool = False) -> str:
+    args = ["diff", "--cached"] if staged else ["diff"]
+    return run_git(args, path, check=False)
+
+
+def clone(url: str, dest: str, token: str = "") -> str:
+    """Clone ``url`` into ``dest``. A token is injected for private HTTPS repos."""
+    if token and url.startswith("https://github.com/"):
+        url = url.replace("https://", f"https://{token}@", 1)
+    parent = os.path.dirname(dest) or "."
+    os.makedirs(parent, exist_ok=True)
+    proc = subprocess.run(
+        ["git", "clone", url, dest],
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        raise GitError(proc.stderr.strip() or "clone failed")
+    return proc.stdout + proc.stderr
+
+
+def remote_url(path: str, remote: str = "origin") -> str:
+    try:
+        return run_git(["remote", "get-url", remote], path).strip()
+    except GitError:
+        return ""
+
+
+# --- GitHub REST API --------------------------------------------------------
+def _api(method: str, endpoint: str, token: str, payload: dict | None = None) -> dict:
+    url = endpoint if endpoint.startswith("http") else f"{GITHUB_API}{endpoint}"
+    data = json.dumps(payload).encode() if payload is not None else None
+    req = request.Request(url, data=data, method=method)
+    req.add_header("Accept", "application/vnd.github+json")
+    req.add_header("X-GitHub-Api-Version", "2022-11-28")
+    req.add_header("User-Agent", "KhervePY")
+    if token:
+        req.add_header("Authorization", f"Bearer {token}")
+    try:
+        with request.urlopen(req, timeout=30) as resp:
+            body = resp.read().decode()
+            return json.loads(body) if body else {}
+    except error.HTTPError as exc:
+        detail = exc.read().decode(errors="replace")
+        try:
+            msg = json.loads(detail).get("message", detail)
+        except Exception:
+            msg = detail
+        raise GitError(f"GitHub API {exc.code}: {msg}") from exc
+    except error.URLError as exc:
+        raise GitError(f"Network error: {exc.reason}") from exc
+
+
+def github_user(token: str) -> dict:
+    """Return the authenticated user's profile."""
+    return _api("GET", "/user", token)
+
+
+def list_user_repos(token: str, per_page: int = 100) -> list[dict]:
+    """List repositories the token can access, most recently pushed first."""
+    return _api(
+        "GET",
+        f"/user/repos?per_page={per_page}&sort=pushed&affiliation=owner,collaborator,organization_member",
+        token,
+    )
+
+
+def parse_owner_repo(url: str) -> tuple[str, str]:
+    """Extract ``(owner, repo)`` from an https or ssh GitHub URL."""
+    m = re.search(r"github\.com[:/]+([^/]+)/([^/.]+)", url)
+    if not m:
+        raise GitError(f"Not a GitHub URL: {url}")
+    return m.group(1), m.group(2)
+
+
+def fork_repo(url: str, token: str) -> dict:
+    """Fork the GitHub repo at ``url`` into the authenticated account."""
+    if not token:
+        raise GitError("A GitHub token is required to fork a repository.")
+    owner, repo = parse_owner_repo(url)
+    return _api("POST", f"/repos/{owner}/{repo}/forks", token, payload={})
