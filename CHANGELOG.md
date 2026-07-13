@@ -3,6 +3,14 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.27.0 — 2026-07-13
+
+### Changed
+- Log ref markers are now small **coloured dots** in the graph column, so the
+  column stays narrow. The full branch/tag names are described in the row
+  **tooltip** and as a **Refs:** line atop the commit-message panel.
+- **LICENSE** now contains the full GNU GPL v3 text (was a short notice).
+
 ## 0.26.0 — 2026-07-13
 
 ### Added

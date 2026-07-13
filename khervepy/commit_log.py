@@ -33,16 +33,19 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from PyQt6.QtGui import QFontMetrics
-
 from khervepy import git_backend as gb
-from khervepy.commit_graph import GraphDelegate, build_lanes, max_lanes
+from khervepy.commit_graph import GraphDelegate, build_lanes, max_lanes, _parse_refs
 
 # Colour per change status.
 _STATUS_COLOR = {
     "A": "#3FB950", "M": "#D29922", "D": "#F85149",
     "R": "#A371F7", "C": "#A371F7", "T": "#D29922",
 }
+
+
+def _refs_text(raw: str) -> str:
+    """Comma-joined ref names for tooltips / the message panel."""
+    return ", ".join(name for name, _color in _parse_refs(raw))
 
 
 def _short_author(name: str) -> str:
@@ -168,15 +171,13 @@ class CommitLog(QWidget):
             return
 
         self._rows = build_lanes(commits)
-        # Graph column holds the rails *and* the ref badges, so size it to fit
-        # both (rails on the left, the widest badge row to their right).
+        # Graph column holds rails + small ref dots, so it stays narrow.
         lanes_px = max_lanes(self._rows) * GraphDelegate.LANE_W
-        fm = QFontMetrics(self.tree.font())
-        badges_px = max(
-            (self._delegate.badges_width(row["commit"], fm) for row in self._rows),
+        dots_px = max(
+            (self._delegate.refs_span(row["commit"]) for row in self._rows),
             default=0,
         )
-        self.tree.setColumnWidth(0, lanes_px + badges_px + 14)
+        self.tree.setColumnWidth(0, lanes_px + dots_px + 14)
 
         for row in self._rows:
             c = row["commit"]
@@ -184,6 +185,11 @@ class CommitLog(QWidget):
                 ["", "", _friendly_date(c["date"]), _short_author(c["author"])]
             )
             item.setData(0, Qt.ItemDataRole.UserRole, c["full"])
+            refs = _refs_text(c.get("refs", ""))
+            if refs:
+                item.setData(0, Qt.ItemDataRole.UserRole + 1, refs)
+                item.setToolTip(0, refs)
+                item.setToolTip(1, refs)
             self.tree.addTopLevelItem(item)
         self.summary.setText(f"{len(self._rows)} commit(s)")
         if self.tree.topLevelItemCount():
@@ -199,9 +205,13 @@ class CommitLog(QWidget):
         if not rev:
             return
         try:
-            self.message.setPlainText(gb.commit_message(self.repo_path, rev).strip())
+            msg = gb.commit_message(self.repo_path, rev).strip()
         except gb.GitError:
-            pass
+            msg = ""
+        refs = current.data(0, Qt.ItemDataRole.UserRole + 1)
+        if refs:  # describe the graph's ref dots here
+            msg = f"Refs: {refs}\n\n{msg}" if msg else f"Refs: {refs}"
+        self.message.setPlainText(msg)
         try:
             files = gb.commit_files(self.repo_path, rev)
         except gb.GitError:

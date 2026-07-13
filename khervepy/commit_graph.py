@@ -202,46 +202,37 @@ class GraphDelegate(QStyledItemDelegate):
         painter.drawEllipse(QRectF(cx - self.DOT_R, cy - self.DOT_R,
                                    2 * self.DOT_R, 2 * self.DOT_R))
 
-    # A single ref badge is never drawn wider than this.
-    MAX_BADGE_W = 150
+    # Ref markers are small coloured dots so the graph column stays narrow;
+    # the full names are shown in the tooltip and the commit-message panel.
+    REF_DOT_R = 4.0
+    REF_DOT_STEP = 12
+    REF_DOT_CAP = 5
 
-    def badges_width(self, commit, fm) -> int:
-        """Total pixel width of the ref badges for ``commit`` (for column 0)."""
-        total = 0
-        for name, _color in _parse_refs(commit.get("refs", "")):
-            label = fm.elidedText(name, Qt.TextElideMode.ElideRight,
-                                  self.MAX_BADGE_W)
-            total += fm.horizontalAdvance(label) + 10 + 4
-        return total
+    def refs_span(self, commit) -> int:
+        """Pixel span the ref dots need for this commit (for column sizing)."""
+        n = sum(1 for _ in _parse_refs(commit.get("refs", "")))
+        return min(n, self.REF_DOT_CAP) * self.REF_DOT_STEP
 
     def _paint_refs(self, painter, option, commit):
-        """Ref badges (branch/tag) sit in the graph column, after the rails."""
+        """Small coloured dots per branch/tag, just right of the rails."""
         refs = list(_parse_refs(commit.get("refs", "")))
         if not refs:
             return
         rect = option.rect
         painter.setClipRect(rect)
-        fm = painter.fontMetrics()
         lanes_px = max_lanes(self._rows()) * self.LANE_W
-        x = rect.x() + lanes_px + 4
+        x = rect.x() + lanes_px + 6
         cy = rect.center().y()
-        h = fm.height()
-        for name, color in refs:
-            label = fm.elidedText(name, Qt.TextElideMode.ElideRight,
-                                  self.MAX_BADGE_W)
-            bw = fm.horizontalAdvance(label) + 10
-            if x > rect.x() + lanes_px + 4 and x + bw > rect.right():
-                painter.setPen(QColor("#8B949E"))
-                painter.drawText(int(x), rect.y(), 14, rect.height(),
-                                 int(Qt.AlignmentFlag.AlignVCenter), "…")
+        r = self.REF_DOT_R
+        painter.setPen(QPen(QColor("#0D1117"), 0.5))
+        for _name, color in refs:
+            if x + 2 * r > rect.right():
+                painter.setBrush(QColor("#8B949E"))  # more refs than fit
+                painter.drawEllipse(QRectF(x, cy - r, 2 * r, 2 * r))
                 break
-            badge = QRectF(x, cy - h / 2.0, bw, h)
-            painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QColor(color))
-            painter.drawRoundedRect(badge, 4, 4)
-            painter.setPen(QColor("#FFFFFF"))
-            painter.drawText(badge, Qt.AlignmentFlag.AlignCenter, label)
-            x += bw + 4
+            painter.drawEllipse(QRectF(x, cy - r, 2 * r, 2 * r))
+            x += self.REF_DOT_STEP
 
     def _paint_subject(self, painter, option, commit):
         rect = option.rect
