@@ -30,9 +30,10 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from PyQt6.QtGui import QIcon
+from PyQt6.QtGui import QIcon, QPalette
 
 from khervepy import __app_name__, __version__, git_backend as gb
+from khervepy import icons
 from khervepy.editor import CodeEditor
 from khervepy.file_tree import FileTree
 from khervepy.find import FindBar, FindInFilesDialog
@@ -170,11 +171,15 @@ class MainWindow(QMainWindow):
         tb.setObjectName("main_toolbar")
         tb.setMovable(False)
         tb.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        tb.setIconSize(QSize(18, 18))
+        # Deliberately small icons (default toolbars use ~24px).
+        tb.setIconSize(QSize(14, 14))
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, tb)
 
-        def add(text, slot, shortcut=None, tip=None):
-            act = QAction(text, self)
+        # Icons are drawn in the toolbar's text colour so they suit the OS theme.
+        glyph_color = self.palette().color(QPalette.ColorRole.WindowText)
+
+        def add(glyph, text, slot, shortcut=None, tip=None):
+            act = QAction(icons.icon(glyph, glyph_color), text, self)
             act.triggered.connect(slot)
             if shortcut:
                 act.setShortcut(QKeySequence(shortcut))
@@ -182,26 +187,29 @@ class MainWindow(QMainWindow):
             tb.addAction(act)
             return act
 
-        add("Open Folder", self.open_folder_dialog, "Ctrl+K")
-        add("Open File", self.open_file_dialog, "Ctrl+O")
-        add("New", self.new_file, "Ctrl+N")
-        add("Save", self.save_current, "Ctrl+S")
+        add("folder", "Open Folder", self.open_folder_dialog, "Ctrl+K")
+        add("file", "Open File", self.open_file_dialog, "Ctrl+O")
+        add("new", "New", self.new_file, "Ctrl+N")
+        add("save", "Save", self.save_current, "Ctrl+S")
         tb.addSeparator()
-        add("Run", self.run_current, "F5", "Run the current Python file")
-        add("Debug", self.debug_current, "Shift+F5", "Debug the current Python file")
-        add("Terminal", self.focus_terminal, "Ctrl+`", "Show the integrated terminal")
+        add("run", "Run", self.run_current, "F5", "Run the current Python file")
+        add("debug", "Debug", self.debug_current, "Shift+F5",
+            "Debug the current Python file")
+        add("terminal", "Terminal", self.focus_terminal, "Ctrl+`",
+            "Show the integrated terminal")
         tb.addSeparator()
-        add("Find", lambda: self.find_bar.open(replace=False), "Ctrl+F")
-        add("Replace", lambda: self.find_bar.open(replace=True), "Ctrl+H")
-        add("Find in Files", self.find_in_files, "Ctrl+Shift+F")
-        add("Search", self.focus_search, "Ctrl+Shift+S", "Project-wide search dock")
+        add("find", "Find", lambda: self.find_bar.open(replace=False), "Ctrl+F")
+        add("replace", "Replace", lambda: self.find_bar.open(replace=True), "Ctrl+H")
+        add("find_in_files", "Find in Files", self.find_in_files, "Ctrl+Shift+F")
+        add("search", "Search", self.focus_search, "Ctrl+Shift+S",
+            "Project-wide search dock")
         tb.addSeparator()
-        add("Commit+Push", self.quick_commit_push, "Ctrl+Shift+P",
+        add("commit_push", "Commit+Push", self.quick_commit_push, "Ctrl+Shift+P",
             "Stage all, commit and push in one step")
-        add("Clone", self.git_panel.clone_dialog)
-        add("Fork", self.git_panel.fork_dialog)
+        add("clone", "Clone", self.git_panel.clone_dialog)
+        add("fork", "Fork", self.git_panel.fork_dialog)
         tb.addSeparator()
-        add("Packages", self.open_package_manager, "Ctrl+Shift+I")
+        add("packages", "Packages", self.open_package_manager, "Ctrl+Shift+I")
 
         # Theme picker lives on the toolbar for quick switching.
         tb.addSeparator()

@@ -3,6 +3,19 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.8.0 — 2026-07-13
+
+### Added
+- **Toolbar icons**: every toolbar action now carries a small line-glyph icon
+  (open folder/file, new, save, run, debug, terminal, find, replace,
+  find-in-files, search, commit+push, clone, fork, packages). Icons are drawn
+  on the fly in the toolbar's text colour (`khervepy/icons.py`) so they suit
+  both light and dark OS themes — no image assets to ship.
+
+### Changed
+- Toolbar icons are rendered deliberately small (14 px, vs the usual ~24 px)
+  for a compact, dense toolbar.
+
 ## 0.7.0 — 2026-07-13
 
 ### Added
