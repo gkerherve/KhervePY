@@ -418,7 +418,7 @@ THEMES: Dict[str, Theme] = {
     ),
 }
 
-DEFAULT_THEME = "Darcula"
+DEFAULT_THEME = "GitHub Dark"
 
 
 def theme_names():

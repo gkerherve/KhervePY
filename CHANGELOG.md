@@ -3,6 +3,12 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.20.1 — 2026-07-13
+
+### Changed
+- Default theme is now **GitHub Dark** (was Darcula). Applies to fresh
+  installs; an already-chosen theme is preserved.
+
 ## 0.20.0 — 2026-07-13
 
 ### Added
