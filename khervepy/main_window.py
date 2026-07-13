@@ -416,7 +416,12 @@ class MainWindow(QMainWindow):
 
     # --- project / files -------------------------------------------------
     def set_project_root(self, path: str) -> None:
+        switching = os.path.abspath(path) != os.path.abspath(self.project_root)
         self.project_root = path
+        # When moving to a different project, close editors that don't belong
+        # to it (leaving untitled buffers untouched).
+        if switching:
+            self._close_tabs_outside_project()
         self.tree.set_root(path)
         self.search.set_root(path)
         self.terminal.set_cwd(path)
@@ -429,6 +434,24 @@ class MainWindow(QMainWindow):
         if hasattr(self, "branch_widget"):
             self.branch_widget.refresh()
         self.setWindowTitle(f"{__app_name__} {__version__} — {os.path.basename(path) or path}")
+
+    def _close_tabs_outside_project(self) -> None:
+        """Close file tabs whose path is not inside the current project root."""
+        root = os.path.normcase(os.path.abspath(self.project_root))
+        for i in range(self.tabs.count() - 1, -1, -1):
+            w = self.tabs.widget(i)
+            if not isinstance(w, CodeEditor) or not w.path:
+                continue  # keep untitled buffers
+            p = os.path.normcase(os.path.abspath(w.path))
+            inside = p == root or p.startswith(root + os.sep)
+            if not inside:
+                if w.isModified():  # auto-save is on — flush before closing
+                    try:
+                        w.save()
+                    except OSError:
+                        pass
+                self.tabs.removeTab(i)
+                w.deleteLater()
 
     def open_path(self, path: str) -> None:
         if os.path.isdir(path):

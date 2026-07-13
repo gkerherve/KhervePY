@@ -3,6 +3,14 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.22.0 — 2026-07-13
+
+### Changed
+- **Opening a different project closes files that don't belong to it.** When
+  you switch project roots, editor tabs whose file lives outside the new
+  project are closed (auto-saved first); untitled buffers and files inside the
+  new project stay open.
+
 ## 0.21.0 — 2026-07-13
 
 ### Fixed
