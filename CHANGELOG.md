@@ -3,6 +3,25 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.14.0 — 2026-07-13
+
+### Added
+- **Files-changed tree** under the commit graph: selecting a commit shows the
+  files it touched as a folder tree (status-coloured); double-click a file to
+  view that file's patch in the Diff dock.
+- `git_backend.commit_files()` and `commit_file_diff()`.
+
+### Changed
+- **Curved branch rails** — the commit graph now draws smooth bezier corners
+  between lanes instead of straight diagonals, matching VS Code's Git Graph.
+- **Whole-window theming**: the selected editor theme now dresses the entire
+  window — toolbar, docks, menus, tabs, tree/list panels, inputs, buttons,
+  scrollbars and status bar — via `themes.window_stylesheet()`. Toolbar icons
+  are recoloured to the theme on every switch.
+- The **Changes** (staging) panel is hidden by default; reopen it from
+  View → Git / GitHub. History and the branch chip's Push/Pull/Clone/Fork are
+  unaffected.
+
 ## 0.13.0 — 2026-07-13
 
 ### Changed

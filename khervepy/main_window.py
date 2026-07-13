@@ -30,7 +30,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from PyQt6.QtGui import QIcon, QPalette
+from PyQt6.QtGui import QColor, QIcon
 
 from khervepy import __app_name__, __version__, git_backend as gb
 from khervepy import icons
@@ -48,7 +48,12 @@ from khervepy.diff_viewer import DiffViewer
 from khervepy.git_panel import GitPanel
 from khervepy.package_manager import PackageManager
 from khervepy.settings import Settings
-from khervepy.themes import theme_names
+from khervepy.themes import (
+    DEFAULT_THEME,
+    THEMES,
+    theme_names,
+    window_stylesheet,
+)
 
 
 class MainWindow(QMainWindow):
@@ -71,6 +76,7 @@ class MainWindow(QMainWindow):
         self._build_toolbar()
         self._build_menu()
         self._build_statusbar()
+        self._apply_window_theme(self.settings.theme)
         self._restore_window()
 
         # Open whatever we were asked to open, else the last project.
@@ -133,13 +139,16 @@ class MainWindow(QMainWindow):
         # Commit history / Log (right, tabbed with the Git panel).
         self.commit_log = CommitLog()
         self.commit_log.show_commit.connect(self.show_commit_diff)
+        self.commit_log.show_commit_file.connect(self.show_commit_file_diff)
         log_dock = QDockWidget("Log", self)
         log_dock.setObjectName("log_dock")
         log_dock.setWidget(self.commit_log)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, log_dock)
         self.tabifyDockWidget(git_dock, log_dock)
-        git_dock.raise_()
+        log_dock.raise_()
         self.log_dock = log_dock
+        # Staging is hidden by default (reopen via View → Git / GitHub).
+        git_dock.hide()
 
         # Run output (bottom).
         self.output = QPlainTextEdit()
@@ -191,8 +200,9 @@ class MainWindow(QMainWindow):
         tb.setIconSize(QSize(24, 24))
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, tb)
 
-        # Icons are drawn in the toolbar's text colour so they suit the OS theme.
-        glyph_color = self.palette().color(QPalette.ColorRole.WindowText)
+        # Icons are drawn in the active theme's foreground colour.
+        glyph_color = QColor(THEMES.get(self.settings.theme, THEMES[DEFAULT_THEME]).foreground)
+        self._icon_actions: list[tuple] = []  # (action, glyph) for recolouring
 
         # PyCharm-style Git branch chip, first on the bar.
         self.branch_widget = BranchWidget(self, glyph_color)
@@ -203,6 +213,7 @@ class MainWindow(QMainWindow):
 
         def add(glyph, text, slot, shortcut=None, tip=None):
             act = QAction(icons.icon(glyph, glyph_color), text, self)
+            self._icon_actions.append((act, glyph))
             act.triggered.connect(slot)
             label = tip or text
             if shortcut:
@@ -645,6 +656,17 @@ class MainWindow(QMainWindow):
         self.diff_dock.show()
         self.diff_dock.raise_()
 
+    def show_commit_file_diff(self, rev: str, file: str) -> None:
+        if not gb.is_repo(self.project_root):
+            return
+        try:
+            text = gb.commit_file_diff(self.project_root, rev, file)
+        except gb.GitError as exc:
+            text = f"git error: {exc}"
+        self.diff_view.show_diff(f"{file}  ·  commit {rev[:8]}", text)
+        self.diff_dock.show()
+        self.diff_dock.raise_()
+
     def _on_repo_cloned(self, dest: str) -> None:
         self.set_project_root(dest)
         self._status(f"Opened cloned repo: {dest}")
@@ -660,7 +682,18 @@ class MainWindow(QMainWindow):
             w = self.tabs.widget(i)
             if isinstance(w, CodeEditor):
                 w.apply_theme(name)
+        self._apply_window_theme(name)
         self._status(f"Theme: {name}")
+
+    def _apply_window_theme(self, name: str) -> None:
+        """Dress the whole window (docks, toolbar, menus) in the theme."""
+        theme = THEMES.get(name, THEMES[DEFAULT_THEME])
+        self.setStyleSheet(window_stylesheet(theme))
+        color = QColor(theme.foreground)
+        for act, glyph in getattr(self, "_icon_actions", []):
+            act.setIcon(icons.icon(glyph, color))
+        if hasattr(self, "branch_widget"):
+            self.branch_widget.setIcon(icons.icon("branch", color))
 
     def about(self) -> None:
         QMessageBox.about(

@@ -15,8 +15,8 @@ the Free Software Foundation, either version 3 of the License, or
 
 from __future__ import annotations
 
-from PyQt6.QtCore import QRectF, Qt
-from PyQt6.QtGui import QColor, QPen
+from PyQt6.QtCore import QPointF, QRectF, Qt
+from PyQt6.QtGui import QColor, QPainterPath, QPen
 from PyQt6.QtWidgets import QStyle, QStyledItemDelegate
 
 # Lane colours, cycled by column.
@@ -161,12 +161,22 @@ class GraphDelegate(QStyledItemDelegate):
         def py(y):
             return rect.y() + y * rect.height()
 
+        painter.setBrush(Qt.BrushStyle.NoBrush)
         for (x0, y0, x1, y1, cidx) in row["segments"]:
             color = QColor(LANE_COLORS[int(cidx) % len(LANE_COLORS)])
             pen = QPen(color, 2.0)
             pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
             painter.setPen(pen)
-            painter.drawLine(int(px(x0)), int(py(y0)), int(px(x1)), int(py(y1)))
+            X0, Y0, X1, Y1 = px(x0), py(y0), px(x1), py(y1)
+            if abs(x0 - x1) < 1e-6:
+                painter.drawLine(int(X0), int(Y0), int(X1), int(Y1))
+            else:
+                # Smooth S-curve between lanes, like VS Code's Git Graph.
+                path = QPainterPath(QPointF(X0, Y0))
+                ymid = (Y0 + Y1) / 2.0
+                path.cubicTo(X0, ymid, X1, ymid, X1, Y1)
+                painter.drawPath(path)
 
         node_col = row["node_col"]
         color = QColor(LANE_COLORS[node_col % len(LANE_COLORS)])

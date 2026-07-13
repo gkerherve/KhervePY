@@ -223,6 +223,27 @@ def show_commit(path: str, rev: str) -> str:
     return run_git(["show", "--stat", "--patch", rev], path, check=False)
 
 
+def commit_files(path: str, rev: str) -> list[tuple[str, str]]:
+    """Return ``(status, filepath)`` for files changed in ``rev``."""
+    out = run_git(
+        ["show", "--name-status", "--pretty=format:", rev], path, check=False
+    )
+    files = []
+    for line in out.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split("\t")
+        if len(parts) >= 2:
+            files.append((parts[0][0], parts[-1]))
+    return files
+
+
+def commit_file_diff(path: str, rev: str, file: str) -> str:
+    """Return the patch for a single ``file`` as changed in ``rev``."""
+    return run_git(["show", rev, "--", file], path, check=False)
+
+
 def log_graph(path: str, all_branches: bool = True, limit: int = 500) -> list[dict]:
     """Return commits (topological order) with parents and ref decorations.
 

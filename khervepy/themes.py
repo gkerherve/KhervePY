@@ -426,6 +426,63 @@ def theme_names():
     return list(THEMES.keys())
 
 
+def window_stylesheet(t: Theme) -> str:
+    """Return a Qt stylesheet that dresses the whole window in ``t``'s colours."""
+    return f"""
+QWidget {{ background: {t.background}; color: {t.foreground}; }}
+QMainWindow::separator {{ background: {t.margin_fg}; width: 1px; height: 1px; }}
+QToolBar {{ background: {t.fold_bg}; border: 0px; border-bottom: 1px solid {t.margin_fg};
+           padding: 3px; spacing: 3px; }}
+QToolButton {{ background: transparent; padding: 4px; border-radius: 4px; color: {t.foreground}; }}
+QToolButton:hover {{ background: {t.selection_bg}; }}
+QToolButton:pressed {{ background: {t.selection_bg}; }}
+QMenuBar {{ background: {t.background}; color: {t.foreground}; }}
+QMenuBar::item {{ background: transparent; padding: 4px 9px; }}
+QMenuBar::item:selected {{ background: {t.selection_bg}; }}
+QMenu {{ background: {t.margin_bg}; color: {t.foreground}; border: 1px solid {t.margin_fg}; }}
+QMenu::item {{ padding: 4px 22px; }}
+QMenu::item:selected {{ background: {t.selection_bg}; color: {t.selection_fg}; }}
+QMenu::separator {{ height: 1px; background: {t.margin_fg}; margin: 4px 8px; }}
+QDockWidget {{ color: {t.foreground}; }}
+QDockWidget::title {{ background: {t.fold_bg}; padding: 5px 8px; }}
+QTabWidget::pane {{ border: 1px solid {t.margin_fg}; }}
+QTabBar::tab {{ background: {t.fold_bg}; color: {t.margin_fg}; padding: 5px 12px; border: 0px; }}
+QTabBar::tab:selected {{ background: {t.background}; color: {t.foreground}; }}
+QTabBar::tab:hover {{ color: {t.foreground}; }}
+QTreeView, QTreeWidget, QListView, QListWidget {{
+    background: {t.background}; color: {t.foreground}; border: 0px; outline: 0;
+    alternate-background-color: {t.caret_line};
+    selection-background-color: {t.selection_bg}; selection-color: {t.selection_fg}; }}
+QTreeView::item:hover, QListWidget::item:hover {{ background: {t.caret_line}; }}
+QHeaderView::section {{ background: {t.fold_bg}; color: {t.foreground}; border: 0px;
+    border-right: 1px solid {t.margin_fg}; padding: 4px 6px; }}
+QLineEdit, QPlainTextEdit, QTextEdit {{ background: {t.caret_line}; color: {t.foreground};
+    border: 1px solid {t.margin_fg}; border-radius: 3px; padding: 3px;
+    selection-background-color: {t.selection_bg}; selection-color: {t.selection_fg}; }}
+QComboBox {{ background: {t.caret_line}; color: {t.foreground};
+    border: 1px solid {t.margin_fg}; border-radius: 3px; padding: 2px 6px; }}
+QComboBox QAbstractItemView {{ background: {t.margin_bg}; color: {t.foreground};
+    selection-background-color: {t.selection_bg}; }}
+QPushButton {{ background: {t.fold_bg}; color: {t.foreground}; border: 1px solid {t.margin_fg};
+    border-radius: 4px; padding: 4px 10px; }}
+QPushButton:hover {{ background: {t.selection_bg}; }}
+QPushButton:disabled {{ color: {t.margin_fg}; border-color: {t.margin_fg}; }}
+QCheckBox {{ background: transparent; color: {t.foreground}; }}
+QLabel {{ background: transparent; color: {t.foreground}; }}
+QStatusBar {{ background: {t.fold_bg}; color: {t.foreground}; }}
+QStatusBar QPushButton {{ background: transparent; border: 0px; padding: 2px 6px; }}
+QScrollBar:vertical {{ background: {t.background}; width: 12px; margin: 0; }}
+QScrollBar::handle:vertical {{ background: {t.margin_fg}; min-height: 24px;
+    border-radius: 5px; margin: 2px; }}
+QScrollBar:horizontal {{ background: {t.background}; height: 12px; margin: 0; }}
+QScrollBar::handle:horizontal {{ background: {t.margin_fg}; min-width: 24px;
+    border-radius: 5px; margin: 2px; }}
+QScrollBar::add-line, QScrollBar::sub-line {{ width: 0; height: 0; background: none; }}
+QScrollBar::add-page, QScrollBar::sub-page {{ background: none; }}
+QSplitter::handle {{ background: {t.margin_fg}; }}
+"""
+
+
 # --- Per-lexer role -> style-number mapping ---------------------------------
 # Each QScintilla lexer numbers its styles differently; this maps our semantic
 # roles onto the concrete constants of the lexers we ship.
