@@ -3,6 +3,15 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.5.0 — 2026-07-13
+
+### Added
+- **Python debugger** dock driven by the standard-library `pdb` (Shift+F5).
+  Runs the current file under `python -m pdb` in a `QProcess`; controls for
+  Continue, Step, Next and Return; "Break here" sets a breakpoint at the caret;
+  a raw pdb command line for anything else (`p var`, `l`, `w`, …). Follows the
+  active project directory.
+
 ## 0.4.0 — 2026-07-13
 
 ### Added

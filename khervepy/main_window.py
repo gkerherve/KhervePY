@@ -36,6 +36,7 @@ from khervepy.file_tree import FileTree
 from khervepy.find import FindBar, FindInFilesDialog
 from khervepy.search_dock import SearchDock
 from khervepy.terminal import Terminal
+from khervepy.debugger import Debugger
 from khervepy.git_panel import GitPanel
 from khervepy.package_manager import PackageManager
 from khervepy.settings import Settings
@@ -136,6 +137,16 @@ class MainWindow(QMainWindow):
         term_dock.raise_()
         self.terminal_dock = term_dock
 
+        # Debugger (bottom, tabbed with Output/Terminal).
+        self.debugger = Debugger(self.current_location, self.project_root)
+        dbg_dock = QDockWidget("Debugger", self)
+        dbg_dock.setObjectName("debugger_dock")
+        dbg_dock.setWidget(self.debugger)
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, dbg_dock)
+        self.tabifyDockWidget(out_dock, dbg_dock)
+        out_dock.raise_()
+        self.debugger_dock = dbg_dock
+
     def _build_toolbar(self) -> None:
         tb = QToolBar("Main")
         tb.setObjectName("main_toolbar")
@@ -159,6 +170,7 @@ class MainWindow(QMainWindow):
         add("Save", self.save_current, "Ctrl+S")
         tb.addSeparator()
         add("Run", self.run_current, "F5", "Run the current Python file")
+        add("Debug", self.debug_current, "Shift+F5", "Debug the current Python file")
         add("Terminal", self.focus_terminal, "Ctrl+`", "Show the integrated terminal")
         tb.addSeparator()
         add("Find", lambda: self.find_bar.open(replace=False), "Ctrl+F")
@@ -214,6 +226,7 @@ class MainWindow(QMainWindow):
         view_menu.addAction(self.git_dock.toggleViewAction())
         view_menu.addAction(self.output_dock.toggleViewAction())
         view_menu.addAction(self.terminal_dock.toggleViewAction())
+        view_menu.addAction(self.debugger_dock.toggleViewAction())
 
         gh_menu = bar.addMenu("&GitHub")
         gh_menu.addAction("Set Token…", self.set_github_token)
@@ -225,6 +238,7 @@ class MainWindow(QMainWindow):
 
         run_menu = bar.addMenu("&Run")
         run_menu.addAction("Run current file", self.run_current)
+        run_menu.addAction("Debug current file", self.debug_current)
         run_menu.addAction("Environments & Packages…", self.open_package_manager)
 
         help_menu = bar.addMenu("&Help")
@@ -239,6 +253,7 @@ class MainWindow(QMainWindow):
         self.tree.set_root(path)
         self.search.set_root(path)
         self.terminal.set_cwd(path)
+        self.debugger.set_cwd(path)
         self.git_panel.set_repo(path)
         self.settings.last_project = path
         self.settings.push_recent_project(path)
@@ -285,6 +300,27 @@ class MainWindow(QMainWindow):
         self.terminal_dock.show()
         self.terminal_dock.raise_()
         self.terminal.input.setFocus()
+
+    def current_location(self) -> tuple[str, int]:
+        """Return ``(path, 1-based-line)`` for the caret in the current editor."""
+        editor = self.current_editor()
+        if editor is None or not editor.path:
+            return "", 1
+        return editor.path, editor.getCursorPosition()[0] + 1
+
+    def debug_current(self) -> None:
+        editor = self.current_editor()
+        if not editor:
+            return
+        if editor.isModified() or not editor.path:
+            self.save_current()
+        path, _ = self.current_location()
+        if not path or not path.endswith(".py"):
+            self._status("Debug supports .py files.")
+            return
+        self.debugger_dock.show()
+        self.debugger_dock.raise_()
+        self.debugger.start(path)
 
     def new_file(self) -> None:
         editor = CodeEditor(None, font_size=self.settings.font_size)
@@ -541,6 +577,7 @@ class MainWindow(QMainWindow):
                 if answer == QMessageBox.StandardButton.Save and w.path:
                     w.save()
         self.terminal.stop()
+        self.debugger.stop()
         self.settings.save_geometry(self.saveGeometry())
         self.settings.save_state(self.saveState())
         super().closeEvent(event)
