@@ -3,6 +3,12 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.18.3 — 2026-07-13
+
+### Changed
+- The Log dock's columns (Graph, Description, Author, Date) are now
+  user-resizable — drag any header divider to adjust widths.
+
 ## 0.18.2 — 2026-07-13
 
 ### Changed

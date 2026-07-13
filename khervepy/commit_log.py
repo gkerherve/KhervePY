@@ -82,9 +82,12 @@ class CommitLog(QWidget):
         self._delegate = GraphDelegate(lambda: self._rows, self.tree)
         self.tree.setItemDelegate(self._delegate)
         header = self.tree.header()
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        # Interactive on every column so the user can drag the dividers.
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        header.setStretchLastSection(False)
+        self.tree.setColumnWidth(1, 320)  # Description
+        self.tree.setColumnWidth(2, 140)  # Author
+        self.tree.setColumnWidth(3, 90)   # Date
         splitter.addWidget(self.tree)
 
         # Full commit message (middle) — the graph's Description column is
