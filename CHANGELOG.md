@@ -3,6 +3,16 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.11.0 — 2026-07-13
+
+### Added
+- **Commit history ("Log") dock**, tabbed with the Git panel on the right.
+  Lists recent commits with branch/tag decorations, author and date; the
+  current HEAD refs are highlighted. Double-click a commit to view its full
+  patch in the Diff dock. Refreshes automatically after any VCS action and when
+  a project is opened.
+- `git_backend.log_entries()` and `show_commit()`.
+
 ## 0.10.0 — 2026-07-13
 
 ### Added

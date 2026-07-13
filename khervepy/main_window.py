@@ -39,6 +39,7 @@ from khervepy.file_tree import FileTree
 from khervepy.git_panel import _Worker
 from khervepy.github_dialog import TokenDialog
 from khervepy.branch_widget import BranchWidget
+from khervepy.commit_log import CommitLog
 from khervepy.find import FindBar, FindInFilesDialog
 from khervepy.search_dock import SearchDock
 from khervepy.terminal import Terminal
@@ -129,6 +130,17 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, git_dock)
         self.git_dock = git_dock
 
+        # Commit history / Log (right, tabbed with the Git panel).
+        self.commit_log = CommitLog()
+        self.commit_log.show_commit.connect(self.show_commit_diff)
+        log_dock = QDockWidget("Log", self)
+        log_dock.setObjectName("log_dock")
+        log_dock.setWidget(self.commit_log)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, log_dock)
+        self.tabifyDockWidget(git_dock, log_dock)
+        git_dock.raise_()
+        self.log_dock = log_dock
+
         # Run output (bottom).
         self.output = QPlainTextEdit()
         self.output.setReadOnly(True)
@@ -168,6 +180,7 @@ class MainWindow(QMainWindow):
         out_dock.raise_()
         self.diff_dock = diff_dock
         self.git_panel.diff_requested.connect(self.show_git_diff)
+        self.git_panel.changed.connect(self.commit_log.refresh)
 
     def _build_toolbar(self) -> None:
         tb = QToolBar("Main")
@@ -262,6 +275,7 @@ class MainWindow(QMainWindow):
         view_menu.addAction(self.tree_dock.toggleViewAction())
         view_menu.addAction(self.search_dock.toggleViewAction())
         view_menu.addAction(self.git_dock.toggleViewAction())
+        view_menu.addAction(self.log_dock.toggleViewAction())
         view_menu.addAction(self.output_dock.toggleViewAction())
         view_menu.addAction(self.terminal_dock.toggleViewAction())
         view_menu.addAction(self.debugger_dock.toggleViewAction())
@@ -343,6 +357,7 @@ class MainWindow(QMainWindow):
         self.terminal.set_cwd(path)
         self.debugger.set_cwd(path)
         self.git_panel.set_repo(path)
+        self.commit_log.set_repo(path)
         self.settings.last_project = path
         self.settings.push_recent_project(path)
         self._rebuild_recent_menu()
@@ -616,6 +631,17 @@ class MainWindow(QMainWindow):
             text = f"git error: {exc}"
         state = "staged" if staged else "working tree"
         self.diff_view.show_diff(f"{file}  ·  {state}", text)
+        self.diff_dock.show()
+        self.diff_dock.raise_()
+
+    def show_commit_diff(self, rev: str) -> None:
+        if not gb.is_repo(self.project_root):
+            return
+        try:
+            text = gb.show_commit(self.project_root, rev)
+        except gb.GitError as exc:
+            text = f"git error: {exc}"
+        self.diff_view.show_diff(f"commit {rev}", text)
         self.diff_dock.show()
         self.diff_dock.raise_()
 

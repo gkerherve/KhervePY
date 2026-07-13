@@ -197,6 +197,32 @@ def log(path: str, limit: int = 30) -> list[tuple[str, str, str]]:
     return rows
 
 
+def log_entries(path: str, limit: int = 300) -> list[dict]:
+    """Return recent commits as dicts: hash, author, date, subject, refs."""
+    fmt = "%h\x1f%an\x1f%ad\x1f%s\x1f%D"
+    out = run_git(
+        ["log", f"-{limit}", "--date=short", f"--pretty=format:{fmt}"],
+        path, check=False,
+    )
+    rows = []
+    for line in out.splitlines():
+        parts = line.split("\x1f")
+        if len(parts) >= 4:
+            rows.append({
+                "hash": parts[0],
+                "author": parts[1],
+                "date": parts[2],
+                "subject": parts[3],
+                "refs": parts[4] if len(parts) > 4 else "",
+            })
+    return rows
+
+
+def show_commit(path: str, rev: str) -> str:
+    """Return ``git show`` output (patch) for a single revision."""
+    return run_git(["show", "--stat", "--patch", rev], path, check=False)
+
+
 def diff(path: str, staged: bool = False) -> str:
     args = ["diff", "--cached"] if staged else ["diff"]
     return run_git(args, path, check=False)
