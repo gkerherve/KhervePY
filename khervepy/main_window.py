@@ -435,16 +435,21 @@ class MainWindow(QMainWindow):
             self.branch_widget.refresh()
         self.setWindowTitle(f"{__app_name__} {__version__} — {os.path.basename(path) or path}")
 
+    def _is_in_project(self, path: str) -> bool:
+        """True if ``path`` lives inside the current project root."""
+        if not path:
+            return False
+        root = os.path.normcase(os.path.abspath(self.project_root))
+        p = os.path.normcase(os.path.abspath(path))
+        return p == root or p.startswith(root + os.sep)
+
     def _close_tabs_outside_project(self) -> None:
         """Close file tabs whose path is not inside the current project root."""
-        root = os.path.normcase(os.path.abspath(self.project_root))
         for i in range(self.tabs.count() - 1, -1, -1):
             w = self.tabs.widget(i)
             if not isinstance(w, CodeEditor) or not w.path:
                 continue  # keep untitled buffers
-            p = os.path.normcase(os.path.abspath(w.path))
-            inside = p == root or p.startswith(root + os.sep)
-            if not inside:
+            if not self._is_in_project(w.path):
                 if w.isModified():  # auto-save is on — flush before closing
                     try:
                         w.save()
@@ -1072,12 +1077,12 @@ class MainWindow(QMainWindow):
         self.settings.active_file = cur.path if cur and cur.path else ""
 
     def _restore_open_files(self) -> None:
-        """Reopen the tabs saved by the previous session, focusing the last."""
+        """Reopen the previous session's tabs that belong to this project."""
         for path in self.settings.open_files:
-            if os.path.isfile(path):
+            if os.path.isfile(path) and self._is_in_project(path):
                 self.open_path(path)
         active = self.settings.active_file
-        if active and os.path.isfile(active):
+        if active and os.path.isfile(active) and self._is_in_project(active):
             self.open_path(active)  # dedups → just re-focuses the tab
 
     def closeEvent(self, event) -> None:

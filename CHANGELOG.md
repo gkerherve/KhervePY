@@ -3,6 +3,14 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.22.2 — 2026-07-13
+
+### Fixed
+- Session restore no longer reopens files from a **different** project. On
+  launch, only saved tabs that live inside the current project are restored, so
+  a stray file like another project's `Main.py` won't linger. (The "close
+  foreign tabs on project switch" logic now shares the same in-project check.)
+
 ## 0.22.1 — 2026-07-13
 
 ### Changed
