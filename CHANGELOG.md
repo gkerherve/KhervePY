@@ -3,6 +3,13 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.24.1 — 2026-07-13
+
+### Changed
+- Log dates are now friendly and include the time: **Today 16:26**,
+  **Yesterday 23:41**, a weekday (e.g. **Mon 14:07**) within the last week,
+  else the plain date.
+
 ## 0.24.0 — 2026-07-13
 
 ### Added

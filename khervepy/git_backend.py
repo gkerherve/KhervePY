@@ -298,7 +298,7 @@ def log_graph(path: str, all_branches: bool = True, limit: int = 500) -> list[di
     full hashes), ``author``, ``date``, ``subject``, ``refs``.
     """
     fmt = "%H\x1f%h\x1f%P\x1f%an\x1f%ad\x1f%s\x1f%D"
-    args = ["log", f"-{limit}", "--date=short", "--topo-order",
+    args = ["log", f"-{limit}", "--date=format:%Y-%m-%d %H:%M", "--topo-order",
             f"--pretty=format:{fmt}"]
     if all_branches:
         args.insert(1, "--all")

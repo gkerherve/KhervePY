@@ -15,6 +15,8 @@ the Free Software Foundation, either version 3 of the License, or
 
 from __future__ import annotations
 
+from datetime import date, datetime
+
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
@@ -39,6 +41,23 @@ _STATUS_COLOR = {
     "A": "#3FB950", "M": "#D29922", "D": "#F85149",
     "R": "#A371F7", "C": "#A371F7", "T": "#D29922",
 }
+
+
+def _friendly_date(raw: str) -> str:
+    """Turn ``2026-07-13 16:26`` into ``Today 16:26`` / ``Yesterday 16:26`` /
+    a weekday within the last week, else the plain date."""
+    try:
+        dt = datetime.strptime(raw, "%Y-%m-%d %H:%M")
+    except ValueError:
+        return raw
+    delta = (date.today() - dt.date()).days
+    if delta == 0:
+        return dt.strftime("Today %H:%M")
+    if delta == 1:
+        return dt.strftime("Yesterday %H:%M")
+    if 1 < delta < 7:
+        return dt.strftime("%a %H:%M")  # e.g. Mon 14:07
+    return dt.strftime("%Y-%m-%d")
 
 
 class CommitLog(QWidget):
@@ -143,7 +162,7 @@ class CommitLog(QWidget):
 
         for row in self._rows:
             c = row["commit"]
-            item = QTreeWidgetItem(["", "", c["author"], c["date"]])
+            item = QTreeWidgetItem(["", "", c["author"], _friendly_date(c["date"])])
             item.setData(0, Qt.ItemDataRole.UserRole, c["full"])
             self.tree.addTopLevelItem(item)
         self.summary.setText(f"{len(self._rows)} commit(s)")
