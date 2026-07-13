@@ -3,6 +3,16 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.20.0 — 2026-07-13
+
+### Added
+- **Auto-save**: edits to a saved file are written to disk automatically
+  (debounced ~250 ms after you stop typing). Closing a tab or the window now
+  flushes path-backed files silently instead of prompting; only untitled
+  buffers still ask.
+- **Compact mode remembers its window**: the mini cockpit reopens at the same
+  size, on-screen position and Terminal↔Log column split you left it at.
+
 ## 0.19.0 — 2026-07-13
 
 ### Added

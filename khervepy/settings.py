@@ -107,3 +107,16 @@ class Settings:
 
     def restore_state(self):
         return self._q.value("window/state")
+
+    # --- compact ("mini") mode window ------------------------------------
+    def save_compact_geometry(self, geometry) -> None:
+        self._q.setValue("window/compact_geometry", geometry)
+
+    def restore_compact_geometry(self):
+        return self._q.value("window/compact_geometry")
+
+    def save_compact_state(self, state) -> None:
+        self._q.setValue("window/compact_state", state)
+
+    def restore_compact_state(self):
+        return self._q.value("window/compact_state")

@@ -443,6 +443,7 @@ class MainWindow(QMainWindow):
         editor = CodeEditor(path, font_size=self.settings.font_size)
         editor.apply_theme(self.settings.theme)
         editor.modificationChanged.connect(self._on_modified)
+        editor.textChanged.connect(lambda e=editor: self._autosave(e))
         index = self.tabs.addTab(editor, editor.display_name)
         self.tabs.setCurrentIndex(index)
         self._status(f"Opened {path}")
@@ -496,6 +497,7 @@ class MainWindow(QMainWindow):
         editor = CodeEditor(None, font_size=self.settings.font_size)
         editor.apply_theme(self.settings.theme)
         editor.modificationChanged.connect(self._on_modified)
+        editor.textChanged.connect(lambda e=editor: self._autosave(e))
         index = self.tabs.addTab(editor, "untitled")
         self.tabs.setCurrentIndex(index)
 
@@ -549,18 +551,25 @@ class MainWindow(QMainWindow):
     def _close_tab(self, index: int) -> None:
         w = self.tabs.widget(index)
         if isinstance(w, CodeEditor) and w.isModified():
-            answer = QMessageBox.question(
-                self, "Unsaved changes",
-                f"Save changes to {w.display_name}?",
-                QMessageBox.StandardButton.Save
-                | QMessageBox.StandardButton.Discard
-                | QMessageBox.StandardButton.Cancel,
-            )
-            if answer == QMessageBox.StandardButton.Cancel:
-                return
-            if answer == QMessageBox.StandardButton.Save:
-                self.tabs.setCurrentIndex(index)
-                self.save_current()
+            if w.path:
+                # Auto-save is on for path-backed files: just flush it silently.
+                try:
+                    w.save()
+                except OSError:
+                    pass
+            else:
+                answer = QMessageBox.question(
+                    self, "Unsaved changes",
+                    f"Save changes to {w.display_name}?",
+                    QMessageBox.StandardButton.Save
+                    | QMessageBox.StandardButton.Discard
+                    | QMessageBox.StandardButton.Cancel,
+                )
+                if answer == QMessageBox.StandardButton.Cancel:
+                    return
+                if answer == QMessageBox.StandardButton.Save:
+                    self.tabs.setCurrentIndex(index)
+                    self.save_current()
         self.tabs.removeTab(index)
 
     def _on_tab_changed(self, index: int) -> None:
@@ -571,6 +580,29 @@ class MainWindow(QMainWindow):
 
     def _on_modified(self, _modified: bool) -> None:
         self._refresh_tab_title()
+
+    # --- auto-save -------------------------------------------------------
+    def _autosave(self, editor: CodeEditor) -> None:
+        """Schedule a near-immediate save after an edit (debounced per editor)."""
+        if not getattr(editor, "path", None):
+            return  # untitled buffers have nowhere to save yet
+        timer = getattr(editor, "_autosave_timer", None)
+        if timer is None:
+            from PyQt6.QtCore import QTimer
+            timer = QTimer(editor)
+            timer.setSingleShot(True)
+            timer.setInterval(250)
+            timer.timeout.connect(lambda e=editor: self._do_autosave(e))
+            editor._autosave_timer = timer
+        timer.start()  # restart the debounce window on every keystroke
+
+    def _do_autosave(self, editor: CodeEditor) -> None:
+        if editor.path and editor.isModified():
+            try:
+                editor.save()
+                self._refresh_tab_title()
+            except OSError as exc:
+                self._status(f"Auto-save failed: {exc}")
 
     def _refresh_tab_title(self) -> None:
         for i in range(self.tabs.count()):
@@ -944,12 +976,23 @@ class MainWindow(QMainWindow):
         self.terminal_dock.raise_()
 
         self.compact_toolbar.show()
-        self.resize(1000, 560)
+        # Reuse the size, on-screen position and column split from last time.
+        cgeom = self.settings.restore_compact_geometry()
+        cstate = self.settings.restore_compact_state()
+        if cgeom is not None:
+            self.restoreGeometry(cgeom)
+        else:
+            self.resize(1100, 600)
+        if cstate is not None:
+            self.restoreState(cstate)
 
     def exit_compact_mode(self) -> None:
         """Return to the full editor, restoring the pre-compact layout."""
         if not self._compact:
             return
+        # Remember the compact window's size, position and column split.
+        self.settings.save_compact_geometry(self.saveGeometry())
+        self.settings.save_compact_state(self.saveState())
         self._compact = False
         self.compact_toolbar.hide()
         self.menuBar().show()
@@ -997,23 +1040,31 @@ class MainWindow(QMainWindow):
             self.open_path(active)  # dedups → just re-focuses the tab
 
     def closeEvent(self, event) -> None:
-        # Prompt for any unsaved editors.
+        # Flush path-backed editors silently (auto-save); prompt only for
+        # untitled buffers that were never given a path.
         for i in range(self.tabs.count()):
             w = self.tabs.widget(i)
-            if isinstance(w, CodeEditor) and w.isModified():
-                self.tabs.setCurrentIndex(i)
-                answer = QMessageBox.question(
-                    self, "Unsaved changes",
-                    f"Save changes to {w.display_name} before quitting?",
-                    QMessageBox.StandardButton.Save
-                    | QMessageBox.StandardButton.Discard
-                    | QMessageBox.StandardButton.Cancel,
-                )
-                if answer == QMessageBox.StandardButton.Cancel:
-                    event.ignore()
-                    return
-                if answer == QMessageBox.StandardButton.Save and w.path:
+            if not (isinstance(w, CodeEditor) and w.isModified()):
+                continue
+            if w.path:
+                try:
                     w.save()
+                except OSError:
+                    pass
+                continue
+            self.tabs.setCurrentIndex(i)
+            answer = QMessageBox.question(
+                self, "Unsaved changes",
+                f"Save changes to {w.display_name} before quitting?",
+                QMessageBox.StandardButton.Save
+                | QMessageBox.StandardButton.Discard
+                | QMessageBox.StandardButton.Cancel,
+            )
+            if answer == QMessageBox.StandardButton.Cancel:
+                event.ignore()
+                return
+            if answer == QMessageBox.StandardButton.Save:
+                self.save_current()
         # Leave compact mode first, so the persisted layout is the full one.
         if self._compact:
             self.exit_compact_mode()
