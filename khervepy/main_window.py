@@ -63,6 +63,8 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.settings = Settings()
         self.project_root = os.getcwd()
+        self._running = False  # a script is executing under the Run button
+        self._killed = False   # the last run was stopped by the user
 
         self.setWindowTitle(f"{__app_name__} {__version__}")
         self.resize(1200, 780)
@@ -234,9 +236,13 @@ class MainWindow(QMainWindow):
         add("new", "New", self.new_file, "Ctrl+N")
         add("save", "Save", self.save_current, "Ctrl+S")
         tb.addSeparator()
-        add("run", "Run", self.run_current, "F5", "Run the current Python file")
+        self.run_action = add("run", "Run", self.run_current, "F5",
+                              "Run the current Python file")
+        self.stop_action = add("stop", "Stop", self.stop_run, "Ctrl+F2",
+                               "Stop the running program")
         add("debug", "Debug", self.debug_current, "Shift+F5",
             "Debug the current Python file")
+        self._update_run_icons()  # paint idle Run/Stop state
         add("terminal", "Terminal", self.focus_terminal, "Ctrl+`",
             "Show the integrated terminal")
         tb.addSeparator()
@@ -585,10 +591,56 @@ class MainWindow(QMainWindow):
             )
         )
         proc.finished.connect(self._on_run_finished)
+        self._killed = False
         proc.start(sys.executable, [path])
         self._run_proc = proc  # keep a reference
+        self._set_running(True)
+
+    def stop_run(self) -> None:
+        """Kill the program started by the Run button."""
+        from PyQt6.QtCore import QProcess
+
+        proc = getattr(self, "_run_proc", None)
+        if proc is not None and proc.state() != QProcess.ProcessState.NotRunning:
+            self._killed = True
+            proc.kill()
+            self._status("Stopping the running program…")
+        else:
+            self._status("Nothing is running.")
+
+    # Status colours for the Run (running) and Stop (armed) controls.
+    _RUN_GREEN = "#3fb950"
+    _STOP_RED = "#f85149"
+
+    def _set_running(self, running: bool) -> None:
+        self._running = running
+        self._update_run_icons()
+
+    def _update_run_icons(self) -> None:
+        if not hasattr(self, "run_action"):
+            return
+        theme = THEMES.get(self.settings.theme, THEMES[DEFAULT_THEME])
+        fg = QColor(theme.foreground)
+        running = getattr(self, "_running", False)
+        # Run turns green while a program is executing.
+        self.run_action.setIcon(
+            icons.icon("run", QColor(self._RUN_GREEN) if running else fg)
+        )
+        # Stop is red and clickable while running, muted and disabled otherwise.
+        if running:
+            stop_color = QColor(self._STOP_RED)
+        else:
+            stop_color = QColor(fg)
+            stop_color.setAlpha(90)
+        self.stop_action.setIcon(icons.icon("stop", stop_color))
+        self.stop_action.setEnabled(running)
 
     def _on_run_finished(self, code: int, _status) -> None:
+        self._set_running(False)
+        if self._killed:
+            self._killed = False
+            self._status("Program stopped.")
+            return
         self._status(f"Process exited ({code}).")
         if code == 0:
             return
@@ -800,6 +852,8 @@ class MainWindow(QMainWindow):
             act.setIcon(icons.icon(glyph, color))
         if hasattr(self, "branch_widget"):
             self.branch_widget.setIcon(icons.icon("branch", color))
+        # Run/Stop carry status colours that must survive a theme recolour.
+        self._update_run_icons()
 
     def about(self) -> None:
         QMessageBox.about(

@@ -82,6 +82,14 @@ def _run(p, px, color):
     p.setBrush(Qt.BrushStyle.NoBrush)
 
 
+def _stop(p, px, color):
+    p.setBrush(QBrush(color))
+    p.drawRoundedRect(
+        QRectF(_P(px, 0.30, 0.30), _P(px, 0.70, 0.70)), px * 0.06, px * 0.06
+    )
+    p.setBrush(Qt.BrushStyle.NoBrush)
+
+
 def _debug(p, px, color):
     p.drawEllipse(QRectF(_P(px, 0.34, 0.36), _P(px, 0.66, 0.80)))
     p.drawLine(_P(px, 0.5, 0.40), _P(px, 0.5, 0.76))
@@ -186,6 +194,7 @@ _GLYPHS = {
     "new": _new,
     "save": _save,
     "run": _run,
+    "stop": _stop,
     "debug": _debug,
     "terminal": _terminal,
     "find": _find,

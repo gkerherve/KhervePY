@@ -3,6 +3,15 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.16.0 — 2026-07-13
+
+### Added
+- **Stop button** on the toolbar (Ctrl+F2) that kills the program launched by
+  Run. It is red and clickable while a program is running, and muted/disabled
+  when nothing is running.
+- The **Run** icon turns **green** while a program is executing and returns to
+  the theme colour when it exits. Both status colours survive theme switches.
+
 ## 0.15.0 — 2026-07-13
 
 ### Added
