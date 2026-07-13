@@ -14,12 +14,31 @@ the Free Software Foundation, either version 3 of the License, or
 
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor
+from PyQt6.QtCore import QRectF, Qt
+from PyQt6.QtGui import QBrush, QColor, QIcon, QPainter, QPixmap
 from PyQt6.QtWidgets import QMenu, QMessageBox, QToolButton
 
 from khervepy import git_backend as gb
 from khervepy import icons
+
+# Branch colours, matching the commit-graph ref dots.
+_CURRENT_COLOR = "#2EA043"  # current branch (green)
+_LOCAL_COLOR = "#1F6FEB"    # other local branches (blue)
+_REMOTE_COLOR = "#8250DF"   # remote branches (purple)
+
+
+def _dot_icon(color: str, px: int = 12) -> QIcon:
+    """A small filled dot used to colour branch entries in the menu."""
+    pm = QPixmap(px, px)
+    pm.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(QBrush(QColor(color)))
+    r = px * 0.30
+    p.drawEllipse(QRectF(px / 2 - r, px / 2 - r, 2 * r, 2 * r))
+    p.end()
+    return QIcon(pm)
 
 
 class BranchWidget(QToolButton):
@@ -88,7 +107,9 @@ class BranchWidget(QToolButton):
         local = m.addAction("Local")
         local.setEnabled(False)
         for b in gb.branches(path):
-            act = m.addAction(("  ✔  " if b == current else "      ") + b)
+            is_current = b == current
+            color = _CURRENT_COLOR if is_current else _LOCAL_COLOR
+            act = m.addAction(_dot_icon(color), ("✔  " + b) if is_current else b)
             act.triggered.connect(lambda _=False, br=b: self._checkout(br))
 
         try:
@@ -100,7 +121,7 @@ class BranchWidget(QToolButton):
             rh = m.addAction("Remote")
             rh.setEnabled(False)
             for rb in remotes:
-                act = m.addAction("      " + rb)
+                act = m.addAction(_dot_icon(_REMOTE_COLOR), rb)
                 act.triggered.connect(lambda _=False, br=rb: self._checkout_remote(br))
 
     # --- actions ---------------------------------------------------------

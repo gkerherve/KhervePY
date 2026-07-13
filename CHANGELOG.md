@@ -3,6 +3,13 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.27.1 — 2026-07-13
+
+### Changed
+- The branch-chip dropdown now colours each branch with a dot matching the
+  commit graph: green for the current branch, blue for other local branches,
+  purple for remotes.
+
 ## 0.27.0 — 2026-07-13
 
 ### Changed
