@@ -3,6 +3,14 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.8.1 — 2026-07-13
+
+### Changed
+- Toolbar is now **icon-only** (no text labels); each action's name and
+  shortcut show as a hover tooltip. Icon size raised to 24 px for a clear,
+  comfortable target, and icons are rendered at exact sizes (16/24/32/48) so
+  they stay crisp.
+
 ## 0.8.0 — 2026-07-13
 
 ### Added

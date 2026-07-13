@@ -200,7 +200,7 @@ def _render(draw, color: QColor, px: int) -> QPixmap:
     return pm
 
 
-def icon(name: str, color: QColor, sizes=(16, 32)) -> QIcon:
+def icon(name: str, color: QColor, sizes=(16, 24, 32, 48)) -> QIcon:
     """Return a multi-resolution ``QIcon`` for ``name`` drawn in ``color``."""
     draw = _GLYPHS.get(name)
     result = QIcon()

@@ -170,9 +170,9 @@ class MainWindow(QMainWindow):
         tb = QToolBar("Main")
         tb.setObjectName("main_toolbar")
         tb.setMovable(False)
-        tb.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        # Deliberately small icons (default toolbars use ~24px).
-        tb.setIconSize(QSize(14, 14))
+        # Icon-only toolbar; the action text becomes the hover tooltip.
+        tb.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        tb.setIconSize(QSize(24, 24))
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, tb)
 
         # Icons are drawn in the toolbar's text colour so they suit the OS theme.
@@ -181,9 +181,11 @@ class MainWindow(QMainWindow):
         def add(glyph, text, slot, shortcut=None, tip=None):
             act = QAction(icons.icon(glyph, glyph_color), text, self)
             act.triggered.connect(slot)
+            label = tip or text
             if shortcut:
                 act.setShortcut(QKeySequence(shortcut))
-            act.setToolTip(tip or text)
+                label = f"{label}  ({shortcut})"
+            act.setToolTip(label)
             tb.addAction(act)
             return act
 
