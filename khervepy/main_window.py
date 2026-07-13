@@ -34,6 +34,7 @@ from khervepy import __app_name__, __version__, git_backend as gb
 from khervepy.editor import CodeEditor
 from khervepy.file_tree import FileTree
 from khervepy.find import FindBar, FindInFilesDialog
+from khervepy.search_dock import SearchDock
 from khervepy.git_panel import GitPanel
 from khervepy.package_manager import PackageManager
 from khervepy.settings import Settings
@@ -94,6 +95,17 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, tree_dock)
         self.tree_dock = tree_dock
 
+        # Global search (left, tabbed behind the project tree).
+        self.search = SearchDock()
+        self.search.open_location.connect(self.open_at_line)
+        search_dock = QDockWidget("Search", self)
+        search_dock.setObjectName("search_dock")
+        search_dock.setWidget(self.search)
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, search_dock)
+        self.tabifyDockWidget(tree_dock, search_dock)
+        tree_dock.raise_()
+        self.search_dock = search_dock
+
         # Git panel (right).
         self.git_panel = GitPanel(self.settings)
         self.git_panel.repo_cloned.connect(self._on_repo_cloned)
@@ -140,6 +152,7 @@ class MainWindow(QMainWindow):
         add("Find", lambda: self.find_bar.open(replace=False), "Ctrl+F")
         add("Replace", lambda: self.find_bar.open(replace=True), "Ctrl+H")
         add("Find in Files", self.find_in_files, "Ctrl+Shift+F")
+        add("Search", self.focus_search, "Ctrl+Shift+S", "Project-wide search dock")
         tb.addSeparator()
         add("Commit+Push", self.quick_commit_push, "Ctrl+Shift+P",
             "Stage all, commit and push in one step")
@@ -185,6 +198,7 @@ class MainWindow(QMainWindow):
 
         view_menu = bar.addMenu("&View")
         view_menu.addAction(self.tree_dock.toggleViewAction())
+        view_menu.addAction(self.search_dock.toggleViewAction())
         view_menu.addAction(self.git_dock.toggleViewAction())
         view_menu.addAction(self.output_dock.toggleViewAction())
 
@@ -210,6 +224,7 @@ class MainWindow(QMainWindow):
     def set_project_root(self, path: str) -> None:
         self.project_root = path
         self.tree.set_root(path)
+        self.search.set_root(path)
         self.git_panel.set_repo(path)
         self.settings.last_project = path
         self.settings.push_recent_project(path)
@@ -246,6 +261,11 @@ class MainWindow(QMainWindow):
         dlg = FindInFilesDialog(self.project_root, self)
         dlg.open_location.connect(self.open_at_line)
         dlg.show()
+
+    def focus_search(self) -> None:
+        self.search_dock.show()
+        self.search_dock.raise_()
+        self.search.focus_query()
 
     def new_file(self) -> None:
         editor = CodeEditor(None, font_size=self.settings.font_size)

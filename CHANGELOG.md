@@ -3,6 +3,16 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.3.0 — 2026-07-13
+
+### Added
+- **Global search dock** (Ctrl+Shift+S): a persistent, dockable project-wide
+  search tabbed behind the project tree. Runs on a worker thread so large
+  projects stay responsive, streams results per file into a tree, and jumps to
+  the matching line on double-click. Case, whole-word and regex toggles.
+- Factored the file-walk and query-compilation helpers so the search dock and
+  the Find-in-Files dialog share one implementation.
+
 ## 0.2.0 — 2026-07-13
 
 ### Added

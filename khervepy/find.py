@@ -40,6 +40,26 @@ TEXT_EXTS = {
 }
 
 
+def iter_text_files(root: str):
+    """Yield every text-like file under ``root``, skipping noise directories."""
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        for fn in filenames:
+            if os.path.splitext(fn)[1].lower() in TEXT_EXTS:
+                yield os.path.join(dirpath, fn)
+
+
+def compile_query(text: str, case: bool, word: bool, regex: bool):
+    """Compile a search into a regex, or return ``None`` for an empty query."""
+    if not text:
+        return None
+    flags = 0 if case else re.IGNORECASE
+    pat = text if regex else re.escape(text)
+    if word:
+        pat = rf"\b{pat}\b"
+    return re.compile(pat, flags)
+
+
 class FindBar(QWidget):
     """A slim find/replace bar that operates on the *current* editor.
 
@@ -232,25 +252,19 @@ class FindInFilesDialog(QDialog):
 
     # --- searching -------------------------------------------------------
     def _pattern(self):
-        text = self.find_input.text()
-        if not text:
-            return None
-        flags = 0 if self.case_cb.isChecked() else re.IGNORECASE
-        pat = text if self.regex_cb.isChecked() else re.escape(text)
-        if self.word_cb.isChecked():
-            pat = rf"\b{pat}\b"
         try:
-            return re.compile(pat, flags)
+            return compile_query(
+                self.find_input.text(),
+                self.case_cb.isChecked(),
+                self.word_cb.isChecked(),
+                self.regex_cb.isChecked(),
+            )
         except re.error as exc:
             QMessageBox.warning(self, "Bad regex", str(exc))
             return None
 
     def _iter_files(self):
-        for dirpath, dirnames, filenames in os.walk(self.root):
-            dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
-            for fn in filenames:
-                if os.path.splitext(fn)[1].lower() in TEXT_EXTS:
-                    yield os.path.join(dirpath, fn)
+        return iter_text_files(self.root)
 
     def search(self) -> None:
         rx = self._pattern()
