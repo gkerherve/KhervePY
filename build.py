@@ -83,13 +83,37 @@ def make_zip(version: str) -> str:
     return archive
 
 
+def _find_iscc() -> str | None:
+    """Locate the Inno Setup compiler on PATH or in its usual install dirs."""
+    found = shutil.which("iscc") or shutil.which("ISCC")
+    if found:
+        return found
+    candidates = []
+    for base in (
+        os.environ.get("LOCALAPPDATA", ""),
+        os.environ.get("ProgramFiles(x86)", ""),
+        os.environ.get("ProgramFiles", ""),
+    ):
+        if not base:
+            continue
+        prefix = os.path.join(base, "Programs") if base.endswith("Local") else base
+        for ver in ("Inno Setup 6", "Inno Setup 5"):
+            candidates.append(os.path.join(prefix, ver, "ISCC.exe"))
+            candidates.append(os.path.join(base, ver, "ISCC.exe"))
+    for path in candidates:
+        if os.path.isfile(path):
+            return path
+    return None
+
+
 def make_installer(version: str) -> None:
     if not sys.platform.startswith("win"):
         print("installer: skipped (Inno Setup runs on Windows only).")
         return
-    iscc = shutil.which("iscc") or shutil.which("ISCC")
+    iscc = _find_iscc()
     if not iscc:
-        print("installer: skipped (Inno Setup 'iscc' not found on PATH).")
+        print("installer: skipped (Inno Setup 'iscc' not found — install it "
+              "from https://jrsoftware.org/isdl.php).")
         return
     iss = os.path.join(PKG_DIR, "khervepy.iss")
     print("running Inno Setup…")

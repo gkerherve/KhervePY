@@ -3,6 +3,14 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.22.1 — 2026-07-13
+
+### Changed
+- `build.py --installer` now finds the Inno Setup compiler (`ISCC.exe`) in its
+  usual install locations — including per-user installs under
+  `%LOCALAPPDATA%\Programs\Inno Setup 6` — instead of only checking PATH. This
+  lets it build `Output\KhervePY-Setup-<version>.exe` out of the box.
+
 ## 0.22.0 — 2026-07-13
 
 ### Changed
