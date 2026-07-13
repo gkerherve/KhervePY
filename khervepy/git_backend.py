@@ -223,6 +223,34 @@ def show_commit(path: str, rev: str) -> str:
     return run_git(["show", "--stat", "--patch", rev], path, check=False)
 
 
+def log_graph(path: str, all_branches: bool = True, limit: int = 500) -> list[dict]:
+    """Return commits (topological order) with parents and ref decorations.
+
+    Each entry: ``full`` (full hash), ``hash`` (short), ``parents`` (list of
+    full hashes), ``author``, ``date``, ``subject``, ``refs``.
+    """
+    fmt = "%H\x1f%h\x1f%P\x1f%an\x1f%ad\x1f%s\x1f%D"
+    args = ["log", f"-{limit}", "--date=short", "--topo-order",
+            f"--pretty=format:{fmt}"]
+    if all_branches:
+        args.insert(1, "--all")
+    out = run_git(args, path, check=False)
+    rows = []
+    for line in out.splitlines():
+        parts = line.split("\x1f")
+        if len(parts) >= 6:
+            rows.append({
+                "full": parts[0],
+                "hash": parts[1],
+                "parents": parts[2].split() if parts[2] else [],
+                "author": parts[3],
+                "date": parts[4],
+                "subject": parts[5],
+                "refs": parts[6] if len(parts) > 6 else "",
+            })
+    return rows
+
+
 def diff(path: str, staged: bool = False) -> str:
     args = ["diff", "--cached"] if staged else ["diff"]
     return run_git(args, path, check=False)

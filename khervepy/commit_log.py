@@ -1,7 +1,7 @@
-"""A commit-history ("Log") view for the current repository.
+"""The commit-history ("Log") dock — a VS Code–style commit graph.
 
-Lists recent commits with their branch/tag decorations, author and date;
-double-clicking a commit shows its patch in the Diff dock.
+Renders all branches with coloured lane rails, ref badges, author and date.
+Double-clicking a commit shows its patch in the Diff dock.
 
 Copyright (C) 2026 Gwilherm Kerherve
 
@@ -14,8 +14,8 @@ the Free Software Foundation, either version 3 of the License, or
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtWidgets import (
+    QCheckBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -27,16 +27,18 @@ from PyQt6.QtWidgets import (
 )
 
 from khervepy import git_backend as gb
+from khervepy.commit_graph import GraphDelegate, build_lanes, max_lanes
 
 
 class CommitLog(QWidget):
-    """Repository commit history, bound to a working directory."""
+    """Commit graph bound to a working directory."""
 
-    show_commit = pyqtSignal(str)  # revision hash
+    show_commit = pyqtSignal(str)  # full revision hash
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.repo_path: str | None = None
+        self._rows: list[dict] = []
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -46,6 +48,10 @@ class CommitLog(QWidget):
         top = QHBoxLayout()
         self.summary = QLabel("No repository.")
         top.addWidget(self.summary, 1)
+        self.all_cb = QCheckBox("All branches")
+        self.all_cb.setChecked(True)
+        self.all_cb.toggled.connect(self.refresh)
+        top.addWidget(self.all_cb)
         refresh = QPushButton("Refresh")
         refresh.clicked.connect(self.refresh)
         top.addWidget(refresh)
@@ -54,12 +60,13 @@ class CommitLog(QWidget):
         self.tree = QTreeWidget()
         self.tree.setRootIsDecorated(False)
         self.tree.setUniformRowHeights(True)
-        self.tree.setAlternatingRowColors(True)
-        self.tree.setHeaderLabels(["Commit", "Author", "Date", "Hash"])
+        self.tree.setHeaderLabels(["Graph", "Description", "Author", "Date"])
+        self.tree.setColumnWidth(0, 90)
         self.tree.itemDoubleClicked.connect(self._activate)
+        self._delegate = GraphDelegate(lambda: self._rows, self.tree)
+        self.tree.setItemDelegate(self._delegate)
         header = self.tree.header()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         layout.addWidget(self.tree, 1)
@@ -71,28 +78,25 @@ class CommitLog(QWidget):
 
     def refresh(self) -> None:
         self.tree.clear()
+        self._rows = []
         if not self.repo_path:
             self.summary.setText("Not a Git repository.")
             return
         try:
-            entries = gb.log_entries(self.repo_path)
+            commits = gb.log_graph(self.repo_path, all_branches=self.all_cb.isChecked())
         except gb.GitError as exc:
             self.summary.setText(f"git error: {exc}")
             return
 
-        ref_font = QFont()
-        ref_font.setBold(True)
-        for e in entries:
-            subject = e["subject"]
-            refs = e.get("refs", "").strip()
-            label = f"⟢ {refs}  {subject}" if refs else subject
-            item = QTreeWidgetItem([label, e["author"], e["date"], e["hash"]])
-            item.setData(0, Qt.ItemDataRole.UserRole, e["hash"])
-            if refs:
-                item.setForeground(0, QColor("#3592C4"))
-                item.setFont(0, ref_font)
+        self._rows = build_lanes(commits)
+        self.tree.setColumnWidth(0, max_lanes(self._rows) * GraphDelegate.LANE_W + 12)
+
+        for row in self._rows:
+            c = row["commit"]
+            item = QTreeWidgetItem(["", "", c["author"], c["date"]])
+            item.setData(0, Qt.ItemDataRole.UserRole, c["full"])
             self.tree.addTopLevelItem(item)
-        self.summary.setText(f"{len(entries)} commit(s)")
+        self.summary.setText(f"{len(self._rows)} commit(s)")
 
     def _activate(self, item: QTreeWidgetItem, _col: int) -> None:
         rev = item.data(0, Qt.ItemDataRole.UserRole)

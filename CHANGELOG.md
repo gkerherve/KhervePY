@@ -3,6 +3,17 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.13.0 — 2026-07-13
+
+### Changed
+- The **Log** dock is now a **VS Code–style commit graph**: coloured branch
+  lane rails with commit nodes, ref badges (current branch green, local blue,
+  remote purple, tags gold), plus author and date columns. An **"All branches"**
+  toggle switches between the whole graph and the current branch. Double-click a
+  commit to view its patch in the Diff dock.
+- New `khervepy/commit_graph.py` (lane-layout algorithm + painting delegate) and
+  `git_backend.log_graph()` (commits with parents and decorations).
+
 ## 0.12.0 — 2026-07-13
 
 ### Added
