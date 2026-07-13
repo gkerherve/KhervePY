@@ -3,6 +3,17 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.26.0 — 2026-07-13
+
+### Added
+- **Full file-explorer operations** in the Project tree:
+  - Right-click menu: New File, New Folder, Cut, Copy, Paste, Duplicate,
+    Rename, Delete, Copy Path, Reveal in File Explorer.
+  - Shortcuts: `F2` rename, `Delete`, `Ctrl+C`/`Ctrl+X`/`Ctrl+V`.
+  - **Drag-and-drop** to move files/folders (and drop external files in).
+  - Copy/duplicate auto-dedupes names ("… copy", "… copy 2"). New files open
+    in the editor. Git-status colours refresh after each operation.
+
 ## 0.25.0 — 2026-07-13
 
 ### Changed

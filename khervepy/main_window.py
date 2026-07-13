@@ -124,6 +124,7 @@ class MainWindow(QMainWindow):
         # Project tree (left).
         self.tree = FileTree()
         self.tree.file_activated.connect(self.open_path)
+        self.tree.changed.connect(self._schedule_vcs_refresh)
         tree_dock = QDockWidget("Project", self)
         tree_dock.setObjectName("project_dock")
         tree_dock.setWidget(self.tree)
