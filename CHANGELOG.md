@@ -3,6 +3,23 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.21.0 — 2026-07-13
+
+### Fixed
+- **Frozen build no longer flashes console windows.** Every child process
+  (git, the integrated shell, Python, pip) is now spawned with
+  `CREATE_NO_WINDOW` on Windows, so the packaged `.exe` stops popping/closing
+  console windows on startup and during git refreshes.
+- **Run / Debug / auto-install now find a real Python in the frozen build.**
+  Previously `sys.executable` pointed at `KhervePY.exe`, so Run relaunched the
+  IDE instead of executing your script (it looked "stuck on KhervePY"). It now
+  resolves a genuine interpreter — the project's `venv`/`.venv` first, then any
+  `python` on PATH — and shows a clear message if none is found.
+
+### Added
+- `khervepy/proc.py`: shared helpers for console suppression and Python-
+  interpreter discovery.
+
 ## 0.20.1 — 2026-07-13
 
 ### Changed

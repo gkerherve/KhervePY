@@ -19,6 +19,8 @@ import subprocess
 import sys
 
 from PyQt6.QtCore import QObject, QProcess, Qt
+
+from khervepy.proc import hide_console, python_executable, subprocess_flags
 from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -115,7 +117,8 @@ class PackageManager(QDialog):
         """Populate the selector with the base interpreter + local venvs."""
         self.env_box.blockSignals(True)
         self.env_box.clear()
-        self.env_box.addItem(f"System ({sys.executable})", sys.executable)
+        system_py = python_executable(self.project_root) or sys.executable
+        self.env_box.addItem(f"System ({system_py})", system_py)
 
         for name in ("venv", ".venv", "env", ".env"):
             candidate = os.path.join(self.project_root, name)
@@ -152,8 +155,9 @@ class PackageManager(QDialog):
         self._append(f"$ {sys.executable} -m venv {target}\n")
         try:
             subprocess.run(
-                [sys.executable, "-m", "venv", target],
-                check=True, capture_output=True, text=True,
+                [python_executable(self.project_root) or sys.executable,
+                 "-m", "venv", target],
+                check=True, capture_output=True, text=True, **subprocess_flags(),
             )
         except subprocess.CalledProcessError as exc:
             self._append(exc.stderr or "venv creation failed\n")
@@ -174,6 +178,7 @@ class PackageManager(QDialog):
         self._set_busy(True)
 
         self._proc = QProcess(self)
+        hide_console(self._proc)
         self._proc.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         self._proc.readyReadStandardOutput.connect(self._read_proc)
         self._proc.finished.connect(self._pip_finished)
@@ -215,7 +220,7 @@ class PackageManager(QDialog):
         try:
             out = subprocess.run(
                 [py, "-m", "pip", "freeze"],
-                capture_output=True, text=True, check=True,
+                capture_output=True, text=True, check=True, **subprocess_flags(),
             ).stdout
         except subprocess.CalledProcessError as exc:
             self._append(exc.stderr or "freeze failed\n")
@@ -235,7 +240,7 @@ class PackageManager(QDialog):
         try:
             out = subprocess.run(
                 [py, "-m", "pip", "list", "--format=freeze"],
-                capture_output=True, text=True, timeout=30,
+                capture_output=True, text=True, timeout=30, **subprocess_flags(),
             ).stdout
         except (subprocess.SubprocessError, OSError):
             return

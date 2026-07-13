@@ -21,6 +21,8 @@ import sys
 
 from PyQt6.QtCore import QProcess
 from PyQt6.QtGui import QFont
+
+from khervepy.proc import hide_console, python_executable
 from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -105,14 +107,20 @@ class Debugger(QWidget):
         if not path or not path.endswith(".py"):
             self._append("[Debugger runs .py files only]\n")
             return
+        python = python_executable(self.cwd)
+        if not python:
+            self._append("[no Python interpreter found — install Python or "
+                         "create a venv in the project]\n")
+            return
         self.stop()
         self.view.clear()
         self._proc = QProcess(self)
+        hide_console(self._proc)
         self._proc.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         self._proc.setWorkingDirectory(self.cwd)
         self._proc.readyReadStandardOutput.connect(self._read)
         self._proc.finished.connect(self._on_finished)
-        self._proc.start(sys.executable, ["-u", "-m", "pdb", path])
+        self._proc.start(python, ["-u", "-m", "pdb", path])
         self._append(f"[pdb {os.path.basename(path)}]\n")
         self._set_running(True)
 

@@ -22,6 +22,8 @@ from dataclasses import dataclass
 from typing import Optional
 from urllib import error, request
 
+from khervepy.proc import subprocess_flags
+
 GITHUB_API = "https://api.github.com"
 
 
@@ -51,6 +53,7 @@ def run_git(args: list[str], cwd: str, check: bool = True) -> str:
         cwd=cwd,
         capture_output=True,
         text=True,
+        **subprocess_flags(),
     )
     if check and proc.returncode != 0:
         raise GitError(proc.stderr.strip() or proc.stdout.strip() or "git failed")
@@ -298,7 +301,7 @@ def diff_file(path: str, file: str, staged: bool = False) -> str:
     # Untracked / new file: diff against nothing.
     proc = subprocess.run(
         ["git", "diff", "--no-index", "--", os.devnull, file],
-        cwd=path, capture_output=True, text=True,
+        cwd=path, capture_output=True, text=True, **subprocess_flags(),
     )
     return proc.stdout or "(no changes to show)"
 
@@ -313,6 +316,7 @@ def clone(url: str, dest: str, token: str = "") -> str:
         ["git", "clone", url, dest],
         capture_output=True,
         text=True,
+        **subprocess_flags(),
     )
     if proc.returncode != 0:
         raise GitError(proc.stderr.strip() or "clone failed")

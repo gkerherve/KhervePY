@@ -20,6 +20,8 @@ import os
 from PyQt6.QtCore import QProcess
 from PyQt6.QtGui import QFont, QKeyEvent
 from PyQt6.QtCore import Qt
+
+from khervepy.proc import hide_console
 from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -115,6 +117,7 @@ class Terminal(QWidget):
             return
         program, args = _default_shell()
         self._proc = QProcess(self)
+        hide_console(self._proc)
         self._proc.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         self._proc.setWorkingDirectory(self.cwd)
         self._proc.readyReadStandardOutput.connect(self._read)

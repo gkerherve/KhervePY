@@ -647,16 +647,23 @@ class MainWindow(QMainWindow):
         self._run_python_file(editor.path)
 
     def _run_python_file(self, path: str) -> None:
-        import sys
         from PyQt6.QtCore import QProcess
+        from khervepy.proc import hide_console, python_executable
+
+        python = python_executable(self.project_root)
+        if not python:
+            self._no_python_message()
+            return
 
         self.output.clear()
         self.output_dock.show()
         self.output_dock.raise_()
         self._status(f"Running {path}…")
         self._last_run_path = path
+        self._run_python = python  # interpreter this run used (for auto-install)
 
         proc = QProcess(self)
+        hide_console(proc)
         proc.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         proc.setWorkingDirectory(self.project_root)
         proc.readyReadStandardOutput.connect(
@@ -666,9 +673,18 @@ class MainWindow(QMainWindow):
         )
         proc.finished.connect(self._on_run_finished)
         self._killed = False
-        proc.start(sys.executable, [path])
+        proc.start(python, [path])
         self._run_proc = proc  # keep a reference
         self._set_running(True)
+
+    def _no_python_message(self) -> None:
+        QMessageBox.warning(
+            self, "No Python found",
+            "KhervePY couldn't find a Python interpreter to run the script.\n\n"
+            "Install Python (and put it on PATH), or create a virtual "
+            "environment in the project via Packages (Ctrl+Shift+I).",
+        )
+        self._status("No Python interpreter found.")
 
     def stop_run(self) -> None:
         """Kill the program started by the Run button."""
@@ -728,16 +744,15 @@ class MainWindow(QMainWindow):
             self._offer_missing_module(m.group(1))
 
     def _offer_missing_module(self, module: str) -> None:
-        import sys
-
         top = module.split(".")[0]
         pkg = self._PIP_NAMES.get(top, top)
+        python = getattr(self, "_run_python", "") or "the current interpreter"
         note = f"<br><br>(pip package: <b>{pkg}</b>)" if pkg != top else ""
         answer = QMessageBox.question(
             self,
             "Missing module",
             f"The script stopped because <b>{top}</b> is not installed.<br><br>"
-            f"Install it with pip into<br><code>{sys.executable}</code>?{note}",
+            f"Install it with pip into<br><code>{python}</code>?{note}",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.Yes,
         )
@@ -745,17 +760,20 @@ class MainWindow(QMainWindow):
             self._install_module(pkg)
 
     def _install_module(self, pkg: str) -> None:
-        import sys
         from PyQt6.QtCore import QProcess
+        from khervepy.proc import hide_console, python_executable
 
+        python = getattr(self, "_run_python", "") or python_executable(self.project_root)
+        if not python:
+            self._no_python_message()
+            return
         self.output_dock.show()
         self.output_dock.raise_()
-        self.output.appendPlainText(
-            f"\n$ {sys.executable} -m pip install {pkg}\n"
-        )
+        self.output.appendPlainText(f"\n$ {python} -m pip install {pkg}\n")
         self._status(f"Installing {pkg}…")
 
         proc = QProcess(self)
+        hide_console(proc)
         proc.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         proc.setWorkingDirectory(self.project_root)
         proc.readyReadStandardOutput.connect(
@@ -764,7 +782,7 @@ class MainWindow(QMainWindow):
             )
         )
         proc.finished.connect(lambda c, _s: self._on_install_finished(c, pkg))
-        proc.start(sys.executable, ["-m", "pip", "install", pkg])
+        proc.start(python, ["-m", "pip", "install", pkg])
         self._pip_proc = proc  # keep a reference
 
     def _on_install_finished(self, code: int, pkg: str) -> None:
