@@ -181,6 +181,22 @@ def _branch(p, px, color):
     p.setBrush(Qt.BrushStyle.NoBrush)
 
 
+def _compact(p, px, color):
+    # Diagonal double-arrow pointing inward = shrink to a compact cockpit.
+    p.drawLine(_P(px, 0.24, 0.24), _P(px, 0.42, 0.42))
+    p.drawPolyline(_poly(px, [(0.42, 0.28), (0.42, 0.42), (0.28, 0.42)]))
+    p.drawLine(_P(px, 0.76, 0.76), _P(px, 0.58, 0.58))
+    p.drawPolyline(_poly(px, [(0.58, 0.72), (0.58, 0.58), (0.72, 0.58)]))
+
+
+def _maximise(p, px, color):
+    # Diagonal double-arrow pointing outward = expand back to the full editor.
+    p.drawLine(_P(px, 0.26, 0.26), _P(px, 0.44, 0.44))
+    p.drawPolyline(_poly(px, [(0.26, 0.40), (0.26, 0.26), (0.40, 0.26)]))
+    p.drawLine(_P(px, 0.74, 0.74), _P(px, 0.56, 0.56))
+    p.drawPolyline(_poly(px, [(0.74, 0.60), (0.74, 0.74), (0.60, 0.74)]))
+
+
 def _packages(p, px, color):
     p.drawRect(QRectF(_P(px, 0.24, 0.30), _P(px, 0.76, 0.80)))
     p.drawLine(_P(px, 0.5, 0.30), _P(px, 0.5, 0.80))
@@ -205,6 +221,8 @@ _GLYPHS = {
     "clone": _clone,
     "fork": _fork,
     "packages": _packages,
+    "compact": _compact,
+    "maximise": _maximise,
 }
 
 

@@ -3,6 +3,16 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.18.0 — 2026-07-13
+
+### Added
+- **Compact "Run & Commit" cockpit**: a toggle pinned to the far right of the
+  toolbar (Ctrl+Shift+M) shrinks the window to a small cockpit — Terminal +
+  Output tabbed on the left, the Git / GitHub commit panel on the right — with
+  its own minimal toolbar carrying the green **Run**, red **Stop**, and a
+  **Maximise** button that restores the full editor and its exact previous
+  layout. The full layout is always persisted, even if you quit while compact.
+
 ## 0.17.0 — 2026-07-13
 
 ### Added

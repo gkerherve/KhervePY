@@ -65,6 +65,7 @@ class MainWindow(QMainWindow):
         self.project_root = os.getcwd()
         self._running = False  # a script is executing under the Run button
         self._killed = False   # the last run was stopped by the user
+        self._compact = False  # compact "run & commit" cockpit is active
 
         self.setWindowTitle(f"{__app_name__} {__version__}")
         self.resize(1200, 780)
@@ -76,6 +77,7 @@ class MainWindow(QMainWindow):
         self._build_tabs()
         self._build_docks()
         self._build_toolbar()
+        self._build_compact_toolbar()
         self._build_menu()
         self._build_statusbar()
         self._apply_window_theme(self.settings.theme)
@@ -111,6 +113,7 @@ class MainWindow(QMainWindow):
         layout.setSpacing(0)
         layout.addWidget(self.tabs, 1)
         layout.addWidget(self.find_bar)
+        self._central = container
         self.setCentralWidget(container)
 
     def _build_docks(self) -> None:
@@ -201,6 +204,7 @@ class MainWindow(QMainWindow):
 
     def _build_toolbar(self) -> None:
         tb = QToolBar("Main")
+        self.main_toolbar = tb
         tb.setObjectName("main_toolbar")
         tb.setMovable(False)
         # Icon-only toolbar; the action text becomes the hover tooltip.
@@ -270,6 +274,41 @@ class MainWindow(QMainWindow):
             self.theme_box.setCurrentIndex(idx)
         self.theme_box.currentTextChanged.connect(self.change_theme)
         tb.addWidget(self.theme_box)
+
+        # A spacer pins the compact-view toggle to the far right of the bar.
+        from PyQt6.QtWidgets import QSizePolicy
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        tb.addWidget(spacer)
+        self.compact_action = add(
+            "compact", "Compact view", self.enter_compact_mode, "Ctrl+Shift+M",
+            "Shrink to a Terminal + commit cockpit",
+        )
+
+    def _build_compact_toolbar(self) -> None:
+        """A minimal toolbar shown only in compact mode: Run, Stop, Maximise."""
+        from PyQt6.QtWidgets import QSizePolicy
+
+        ct = QToolBar("Compact")
+        ct.setObjectName("compact_toolbar")
+        ct.setMovable(False)
+        ct.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        ct.setIconSize(QSize(24, 24))
+        ct.addWidget(QLabel(" Run & Commit "))
+        ct.addAction(self.run_action)
+        ct.addAction(self.stop_action)
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        ct.addWidget(spacer)
+        color = QColor(THEMES.get(self.settings.theme, THEMES[DEFAULT_THEME]).foreground)
+        self.restore_action = QAction(icons.icon("maximise", color), "Maximise", self)
+        self.restore_action.setToolTip("Restore the full editor")
+        self.restore_action.triggered.connect(self.exit_compact_mode)
+        self._icon_actions.append((self.restore_action, "maximise"))
+        ct.addAction(self.restore_action)
+        self.addToolBar(Qt.ToolBarArea.TopToolBarArea, ct)
+        ct.hide()
+        self.compact_toolbar = ct
 
     def _build_menu(self) -> None:
         bar = self.menuBar()
@@ -874,6 +913,52 @@ class MainWindow(QMainWindow):
     def _status(self, msg: str) -> None:
         self.statusBar().showMessage(msg, 8000)
 
+    # --- compact "run & commit" cockpit ----------------------------------
+    def enter_compact_mode(self) -> None:
+        """Collapse to a small window: Terminal/Output left, Git commit right."""
+        if self._compact:
+            return
+        # Remember the full layout so Maximise can restore it verbatim.
+        self._full_state = self.saveState()
+        self._full_geom = self.saveGeometry()
+        self._compact = True
+
+        # Strip the chrome down to the cockpit.
+        self.menuBar().hide()
+        self.statusBar().hide()
+        self.main_toolbar.hide()
+        self._central.hide()
+        for d in (self.tree_dock, self.search_dock, self.log_dock,
+                  self.output_dock, self.terminal_dock, self.debugger_dock,
+                  self.diff_dock, self.git_dock):
+            d.hide()
+
+        # Left: Output + Terminal (tabbed).  Right: Git / GitHub (commit box).
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.output_dock)
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.terminal_dock)
+        self.tabifyDockWidget(self.output_dock, self.terminal_dock)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.git_dock)
+        for d in (self.output_dock, self.terminal_dock, self.git_dock):
+            d.show()
+        self.terminal_dock.raise_()
+
+        self.compact_toolbar.show()
+        self.resize(900, 520)
+
+    def exit_compact_mode(self) -> None:
+        """Return to the full editor, restoring the pre-compact layout."""
+        if not self._compact:
+            return
+        self._compact = False
+        self.compact_toolbar.hide()
+        self.menuBar().show()
+        self.statusBar().show()
+        self.main_toolbar.show()
+        self._central.show()
+        if getattr(self, "_full_state", None) is not None:
+            self.restoreGeometry(self._full_geom)
+            self.restoreState(self._full_state)
+
     # --- window state ----------------------------------------------------
     def _restore_window(self) -> None:
         geo = self.settings.restore_geometry()
@@ -908,6 +993,9 @@ class MainWindow(QMainWindow):
                     return
                 if answer == QMessageBox.StandardButton.Save and w.path:
                     w.save()
+        # Leave compact mode first, so the persisted layout is the full one.
+        if self._compact:
+            self.exit_compact_mode()
         # Save the layout *before* tearing down child processes, so a slow or
         # failing stop() can never cost the user their window positions.
         self._save_window()
