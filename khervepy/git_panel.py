@@ -55,6 +55,7 @@ class GitPanel(QWidget):
 
     repo_cloned = pyqtSignal(str)  # emits the new working-copy path
     status_message = pyqtSignal(str)
+    diff_requested = pyqtSignal(str, bool)  # (file, staged)
 
     def __init__(self, settings, parent=None):
         super().__init__(parent)
@@ -85,6 +86,8 @@ class GitPanel(QWidget):
         layout.addWidget(QLabel("Changes"))
         self.files = QListWidget()
         self.files.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
+        self.files.itemDoubleClicked.connect(self._request_diff)
+        self.files.setToolTip("Double-click a file to view its diff")
         layout.addWidget(self.files, 1)
 
         stage_row = QHBoxLayout()
@@ -195,6 +198,12 @@ class GitPanel(QWidget):
             it.data(Qt.ItemDataRole.UserRole)
             for it in self.files.selectedItems()
         ]
+
+    def _request_diff(self, item) -> None:
+        name = item.data(Qt.ItemDataRole.UserRole)
+        staged = bool(item.data(Qt.ItemDataRole.UserRole + 1))
+        if name:
+            self.diff_requested.emit(name, staged)
 
     def _stage_selected(self) -> None:
         files = self._selected_files()

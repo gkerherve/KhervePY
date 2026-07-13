@@ -37,6 +37,7 @@ from khervepy.find import FindBar, FindInFilesDialog
 from khervepy.search_dock import SearchDock
 from khervepy.terminal import Terminal
 from khervepy.debugger import Debugger
+from khervepy.diff_viewer import DiffViewer
 from khervepy.git_panel import GitPanel
 from khervepy.package_manager import PackageManager
 from khervepy.settings import Settings
@@ -147,6 +148,17 @@ class MainWindow(QMainWindow):
         out_dock.raise_()
         self.debugger_dock = dbg_dock
 
+        # Diff viewer (bottom, tabbed with Output).
+        self.diff_view = DiffViewer()
+        diff_dock = QDockWidget("Diff", self)
+        diff_dock.setObjectName("diff_dock")
+        diff_dock.setWidget(self.diff_view)
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, diff_dock)
+        self.tabifyDockWidget(out_dock, diff_dock)
+        out_dock.raise_()
+        self.diff_dock = diff_dock
+        self.git_panel.diff_requested.connect(self.show_git_diff)
+
     def _build_toolbar(self) -> None:
         tb = QToolBar("Main")
         tb.setObjectName("main_toolbar")
@@ -227,6 +239,7 @@ class MainWindow(QMainWindow):
         view_menu.addAction(self.output_dock.toggleViewAction())
         view_menu.addAction(self.terminal_dock.toggleViewAction())
         view_menu.addAction(self.debugger_dock.toggleViewAction())
+        view_menu.addAction(self.diff_dock.toggleViewAction())
 
         gh_menu = bar.addMenu("&GitHub")
         gh_menu.addAction("Set Token…", self.set_github_token)
@@ -512,6 +525,18 @@ class MainWindow(QMainWindow):
         # Push via the panel's async machinery.
         self.git_panel._push()
         self.git_panel.refresh()
+
+    def show_git_diff(self, file: str, staged: bool) -> None:
+        if not gb.is_repo(self.project_root):
+            return
+        try:
+            text = gb.diff_file(self.project_root, file, staged)
+        except gb.GitError as exc:
+            text = f"git error: {exc}"
+        state = "staged" if staged else "working tree"
+        self.diff_view.show_diff(f"{file}  ·  {state}", text)
+        self.diff_dock.show()
+        self.diff_dock.raise_()
 
     def _on_repo_cloned(self, dest: str) -> None:
         self.set_project_root(dest)

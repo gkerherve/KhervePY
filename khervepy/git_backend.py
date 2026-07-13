@@ -173,6 +173,27 @@ def diff(path: str, staged: bool = False) -> str:
     return run_git(args, path, check=False)
 
 
+def diff_file(path: str, file: str, staged: bool = False) -> str:
+    """Return the unified diff for a single ``file`` within the repo.
+
+    Falls back to an ``--no-index`` diff against /dev/null for untracked files
+    so newly created files still show their contents as additions.
+    """
+    args = ["diff"]
+    if staged:
+        args.append("--cached")
+    args += ["--", file]
+    out = run_git(args, path, check=False)
+    if out.strip():
+        return out
+    # Untracked / new file: diff against nothing.
+    proc = subprocess.run(
+        ["git", "diff", "--no-index", "--", os.devnull, file],
+        cwd=path, capture_output=True, text=True,
+    )
+    return proc.stdout or "(no changes to show)"
+
+
 def clone(url: str, dest: str, token: str = "") -> str:
     """Clone ``url`` into ``dest``. A token is injected for private HTTPS repos."""
     if token and url.startswith("https://github.com/"):

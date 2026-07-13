@@ -3,6 +3,15 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.6.0 — 2026-07-13
+
+### Added
+- **Diff viewer** for the Git panel: double-click any changed file to see its
+  unified diff in a bottom dock, with added/removed lines and hunk headers
+  colourised. Handles staged, working-tree and untracked/new files (the latter
+  shown as all-additions via `--no-index`).
+- `git_backend.diff_file()` for single-file diffs with an untracked fallback.
+
 ## 0.5.0 — 2026-07-13
 
 ### Added
