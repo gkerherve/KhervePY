@@ -35,6 +35,7 @@ from khervepy.editor import CodeEditor
 from khervepy.file_tree import FileTree
 from khervepy.find import FindBar, FindInFilesDialog
 from khervepy.search_dock import SearchDock
+from khervepy.terminal import Terminal
 from khervepy.git_panel import GitPanel
 from khervepy.package_manager import PackageManager
 from khervepy.settings import Settings
@@ -125,6 +126,16 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, out_dock)
         self.output_dock = out_dock
 
+        # Integrated terminal (bottom, tabbed with Output).
+        self.terminal = Terminal(self.project_root)
+        term_dock = QDockWidget("Terminal", self)
+        term_dock.setObjectName("terminal_dock")
+        term_dock.setWidget(self.terminal)
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, term_dock)
+        self.tabifyDockWidget(out_dock, term_dock)
+        term_dock.raise_()
+        self.terminal_dock = term_dock
+
     def _build_toolbar(self) -> None:
         tb = QToolBar("Main")
         tb.setObjectName("main_toolbar")
@@ -148,6 +159,7 @@ class MainWindow(QMainWindow):
         add("Save", self.save_current, "Ctrl+S")
         tb.addSeparator()
         add("Run", self.run_current, "F5", "Run the current Python file")
+        add("Terminal", self.focus_terminal, "Ctrl+`", "Show the integrated terminal")
         tb.addSeparator()
         add("Find", lambda: self.find_bar.open(replace=False), "Ctrl+F")
         add("Replace", lambda: self.find_bar.open(replace=True), "Ctrl+H")
@@ -201,6 +213,7 @@ class MainWindow(QMainWindow):
         view_menu.addAction(self.search_dock.toggleViewAction())
         view_menu.addAction(self.git_dock.toggleViewAction())
         view_menu.addAction(self.output_dock.toggleViewAction())
+        view_menu.addAction(self.terminal_dock.toggleViewAction())
 
         gh_menu = bar.addMenu("&GitHub")
         gh_menu.addAction("Set Token…", self.set_github_token)
@@ -225,6 +238,7 @@ class MainWindow(QMainWindow):
         self.project_root = path
         self.tree.set_root(path)
         self.search.set_root(path)
+        self.terminal.set_cwd(path)
         self.git_panel.set_repo(path)
         self.settings.last_project = path
         self.settings.push_recent_project(path)
@@ -266,6 +280,11 @@ class MainWindow(QMainWindow):
         self.search_dock.show()
         self.search_dock.raise_()
         self.search.focus_query()
+
+    def focus_terminal(self) -> None:
+        self.terminal_dock.show()
+        self.terminal_dock.raise_()
+        self.terminal.input.setFocus()
 
     def new_file(self) -> None:
         editor = CodeEditor(None, font_size=self.settings.font_size)
@@ -521,6 +540,7 @@ class MainWindow(QMainWindow):
                     return
                 if answer == QMessageBox.StandardButton.Save and w.path:
                     w.save()
+        self.terminal.stop()
         self.settings.save_geometry(self.saveGeometry())
         self.settings.save_state(self.saveState())
         super().closeEvent(event)

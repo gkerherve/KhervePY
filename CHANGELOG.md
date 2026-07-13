@@ -3,6 +3,15 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.4.0 — 2026-07-13
+
+### Added
+- **Integrated terminal** dock (Ctrl+`), tabbed with the Output pane. Runs a
+  persistent interactive shell via `QProcess`, streams merged stdout/stderr,
+  and pipes typed commands to its stdin. Command history (Up/Down), Clear and
+  Restart buttons. Follows the active project directory (`cd` on project
+  switch). Line-oriented — full-screen/curses programs are not supported.
+
 ## 0.3.0 — 2026-07-13
 
 ### Added
