@@ -3,6 +3,14 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.22.3 — 2026-07-13
+
+### Changed
+- Installer now creates shortcuts you can actually find: a **Desktop** icon
+  (offered pre-checked) and **Start-menu** entries for KhervePY and its
+  uninstaller. Add/Remove Programs also shows the app icon
+  (`UninstallDisplayIcon`).
+
 ## 0.22.2 — 2026-07-13
 
 ### Fixed
