@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import os
 
-from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtCore import Qt, QSize, QThread
 from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import (
     QComboBox,
@@ -20,10 +20,10 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QInputDialog,
     QLabel,
-    QLineEdit,
     QMainWindow,
     QMessageBox,
     QPlainTextEdit,
+    QPushButton,
     QTabWidget,
     QToolBar,
     QVBoxLayout,
@@ -36,6 +36,8 @@ from khervepy import __app_name__, __version__, git_backend as gb
 from khervepy import icons
 from khervepy.editor import CodeEditor
 from khervepy.file_tree import FileTree
+from khervepy.git_panel import _Worker
+from khervepy.github_dialog import TokenDialog
 from khervepy.find import FindBar, FindInFilesDialog
 from khervepy.search_dock import SearchDock
 from khervepy.terminal import Terminal
@@ -275,6 +277,55 @@ class MainWindow(QMainWindow):
 
     def _build_statusbar(self) -> None:
         self.statusBar().showMessage(f"{__app_name__} {__version__} — ready")
+        # Persistent GitHub sign-in indicator (click to open the token dialog).
+        self._gh_threads: list[QThread] = []
+        self.gh_indicator = QPushButton()
+        self.gh_indicator.setFlat(True)
+        self.gh_indicator.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.gh_indicator.clicked.connect(self.set_github_token)
+        self.statusBar().addPermanentWidget(self.gh_indicator)
+        self._update_github_indicator()
+        # If a token is stored but the user is unknown, verify quietly.
+        if self.settings.github_token and not self.settings.github_user:
+            self._verify_github_async(self.settings.github_token)
+
+    def _update_github_indicator(self) -> None:
+        user = self.settings.github_user
+        if user:
+            self.gh_indicator.setText(f"GitHub: {user}")
+            self.gh_indicator.setToolTip(f"Signed in as {user} — click to change token")
+        elif self.settings.github_token:
+            self.gh_indicator.setText("GitHub: token set")
+            self.gh_indicator.setToolTip("Token stored but not verified — click to test")
+        else:
+            self.gh_indicator.setText("GitHub: not signed in")
+            self.gh_indicator.setToolTip("Click to set a GitHub token")
+
+    def _verify_github_async(self, token: str) -> None:
+        """Confirm a token in the background and refresh the indicator."""
+        thread = QThread(self)
+        worker = _Worker(lambda: gb.github_user(token))
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+
+        def cleanup():
+            thread.quit()
+            thread.wait()
+            if thread in self._gh_threads:
+                self._gh_threads.remove(thread)
+
+        def done(user):
+            self.settings.github_user = user.get("login", "")
+            self._update_github_indicator()
+            cleanup()
+
+        def fail(_msg):
+            cleanup()
+
+        worker.done.connect(done)
+        worker.failed.connect(fail)
+        self._gh_threads.append(thread)
+        thread.start()
 
     # --- project / files -------------------------------------------------
     def set_project_root(self, path: str) -> None:
@@ -472,22 +523,26 @@ class MainWindow(QMainWindow):
 
     # --- github ----------------------------------------------------------
     def set_github_token(self) -> None:
-        token, ok = QInputDialog.getText(
-            self, "GitHub token",
-            "Personal access token (repo scope):",
-            echo=QLineEdit.EchoMode.Password,
-            text=self.settings.github_token,
-        )
-        if not ok:
+        dlg = TokenDialog(self.settings, self)
+        if dlg.exec() != TokenDialog.DialogCode.Accepted:
             return
-        self.settings.github_token = token.strip()
-        if token.strip():
-            try:
-                user = gb.github_user(token.strip())
-                self.settings.github_user = user.get("login", "")
-                self._status(f"Authenticated as {user.get('login', '?')}.")
-            except gb.GitError as exc:
-                QMessageBox.warning(self, "GitHub", str(exc))
+        token = dlg.token()
+        self.settings.github_token = token
+        if not token:
+            self.settings.github_user = ""
+            self._update_github_indicator()
+            self._status("GitHub token cleared.")
+            return
+        if dlg.verified_login:
+            # Already verified by the "Test token" button.
+            self.settings.github_user = dlg.verified_login
+            self._update_github_indicator()
+            self._status(f"GitHub: signed in as {dlg.verified_login}.")
+        else:
+            # Saved without testing — verify quietly in the background.
+            self.settings.github_user = ""
+            self._update_github_indicator()
+            self._verify_github_async(token)
 
     def browse_my_repos(self) -> None:
         token = self.settings.github_token
@@ -619,6 +674,9 @@ class MainWindow(QMainWindow):
                     w.save()
         self.terminal.stop()
         self.debugger.stop()
+        for thread in list(self._gh_threads):
+            thread.quit()
+            thread.wait()
         self.settings.save_geometry(self.saveGeometry())
         self.settings.save_state(self.saveState())
         super().closeEvent(event)

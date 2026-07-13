@@ -3,6 +3,18 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.9.0 — 2026-07-13
+
+### Added
+- **GitHub token dialog** (`GitHub → Set Token…`): a real dialog replacing the
+  plain prompt, with a description, a **"Create a token on GitHub"** link that
+  opens the pre-filled classic-token page (repo scope), a show/hide reveal
+  toggle, and a **"Test token"** button that verifies the token off-thread and
+  reports the authenticated username.
+- **Persistent GitHub indicator** in the status bar showing "GitHub: \<user\>",
+  "token set" or "not signed in"; click it to open the token dialog. On startup
+  a stored-but-unverified token is confirmed quietly in the background.
+
 ## 0.8.1 — 2026-07-13
 
 ### Changed
