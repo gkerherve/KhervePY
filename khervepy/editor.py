@@ -23,6 +23,11 @@ from khervepy.themes import THEMES, DEFAULT_THEME, apply_theme
 class CodeEditor(QsciScintilla):
     """A single editable buffer, theme-aware and language-aware."""
 
+    # Change-bar markers (git diff vs HEAD), shown in the symbol margin.
+    _MARK_ADDED = 8
+    _MARK_MODIFIED = 9
+    _MARK_DELETED = 10
+
     def __init__(self, path: str | None = None, font_size: int = 11, parent=None):
         super().__init__(parent)
         self.path = path
@@ -45,6 +50,24 @@ class CodeEditor(QsciScintilla):
         self.setMarginType(0, QsciScintilla.MarginType.NumberMargin)
         self.setMarginLineNumbers(0, True)
         self._resize_line_margin()
+
+        # Change-bar margin (index 1): a thin gutter of git diff markers.
+        self.setMarginType(1, QsciScintilla.MarginType.SymbolMargin)
+        self.setMarginWidth(1, 5)
+        self.setMarginSensitivity(1, False)
+        mask = (
+            (1 << self._MARK_ADDED)
+            | (1 << self._MARK_MODIFIED)
+            | (1 << self._MARK_DELETED)
+        )
+        self.setMarginMarkerMask(1, mask)
+        for mid, color in (
+            (self._MARK_ADDED, "#3FB950"),
+            (self._MARK_MODIFIED, "#58A6FF"),
+            (self._MARK_DELETED, "#F85149"),
+        ):
+            self.markerDefine(QsciScintilla.MarkerSymbol.FullRectangle, mid)
+            self.setMarkerBackgroundColor(QColor(color), mid)
 
         # Fold margin.
         self.setFolding(QsciScintilla.FoldStyle.BoxedTreeFoldStyle, 2)
@@ -106,6 +129,19 @@ class CodeEditor(QsciScintilla):
             self._lexer.setFont(self._font)
         self.setMarginsFont(self._font)
         self._resize_line_margin()
+
+    # --- change bar ------------------------------------------------------
+    def set_change_markers(self, added, modified, deleted) -> None:
+        """Repaint the gutter change-bar from 0-based line lists."""
+        for mid in (self._MARK_ADDED, self._MARK_MODIFIED, self._MARK_DELETED):
+            self.markerDeleteAll(mid)
+        last = max(0, self.lines() - 1)
+        for ln in added:
+            self.markerAdd(ln, self._MARK_ADDED)
+        for ln in modified:
+            self.markerAdd(ln, self._MARK_MODIFIED)
+        for ln in deleted:
+            self.markerAdd(min(ln, last), self._MARK_DELETED)
 
     # --- persistence -----------------------------------------------------
     def save(self, path: str | None = None) -> str:

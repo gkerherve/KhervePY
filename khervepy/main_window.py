@@ -98,6 +98,7 @@ class MainWindow(QMainWindow):
             self.set_project_root(self.project_root)
         # Reopen the editor tabs from the previous session.
         self._restore_open_files()
+        self._setup_vcs()
 
     # --- construction ----------------------------------------------------
     def _build_tabs(self) -> None:
@@ -433,6 +434,7 @@ class MainWindow(QMainWindow):
         self._rebuild_recent_menu()
         if hasattr(self, "branch_widget"):
             self.branch_widget.refresh()
+        self._schedule_vcs_refresh()
         self.setWindowTitle(f"{__app_name__} {__version__} — {os.path.basename(path) or path}")
 
     def _is_in_project(self, path: str) -> bool:
@@ -472,8 +474,10 @@ class MainWindow(QMainWindow):
         editor.apply_theme(self.settings.theme)
         editor.modificationChanged.connect(self._on_modified)
         editor.textChanged.connect(lambda e=editor: self._autosave(e))
+        editor.textChanged.connect(self._schedule_vcs_refresh)
         index = self.tabs.addTab(editor, editor.display_name)
         self.tabs.setCurrentIndex(index)
+        self._update_change_markers(editor)
         self._status(f"Opened {path}")
 
     def open_at_line(self, path: str, line: int) -> None:
@@ -526,6 +530,7 @@ class MainWindow(QMainWindow):
         editor.apply_theme(self.settings.theme)
         editor.modificationChanged.connect(self._on_modified)
         editor.textChanged.connect(lambda e=editor: self._autosave(e))
+        editor.textChanged.connect(self._schedule_vcs_refresh)
         index = self.tabs.addTab(editor, "untitled")
         self.tabs.setCurrentIndex(index)
 
@@ -605,6 +610,7 @@ class MainWindow(QMainWindow):
         if editor:
             lang = os.path.splitext(editor.path or "")[1] or "text"
             self._status(f"{editor.display_name} · {lang}")
+            self._update_change_markers(editor)
 
     def _on_modified(self, _modified: bool) -> None:
         self._refresh_tab_title()
@@ -629,8 +635,63 @@ class MainWindow(QMainWindow):
             try:
                 editor.save()
                 self._refresh_tab_title()
+                self._schedule_vcs_refresh()
             except OSError as exc:
                 self._status(f"Auto-save failed: {exc}")
+
+    # --- version-control decorations -------------------------------------
+    def _setup_vcs(self) -> None:
+        """Debounced refresh of tree colours + editor change bars."""
+        from PyQt6.QtCore import QTimer
+        self._vcs_timer = QTimer(self)
+        self._vcs_timer.setSingleShot(True)
+        self._vcs_timer.setInterval(350)
+        self._vcs_timer.timeout.connect(self._do_vcs_refresh)
+        self.git_panel.changed.connect(self._schedule_vcs_refresh)
+        self._schedule_vcs_refresh()
+
+    def _schedule_vcs_refresh(self) -> None:
+        timer = getattr(self, "_vcs_timer", None)
+        if timer is not None:
+            timer.start()
+
+    def _do_vcs_refresh(self) -> None:
+        root = self.project_root
+        in_repo = gb.is_repo(root)
+        self.tree.set_status_map(gb.status_map(root) if in_repo else {})
+        self._update_change_markers(self.current_editor())
+
+    def _update_change_markers(self, editor: CodeEditor | None) -> None:
+        """Diff the current buffer against HEAD and paint the change bar."""
+        if editor is None or not getattr(editor, "path", None):
+            return
+        root = self.project_root
+        if not gb.is_repo(root):
+            editor.set_change_markers([], [], [])
+            return
+        rel = os.path.relpath(editor.path, root).replace(os.sep, "/")
+        if rel.startswith(".."):
+            editor.set_change_markers([], [], [])
+            return
+        head = gb.file_at_head(root, rel)
+        if head is None:  # new/untracked file — every line is an addition
+            editor.set_change_markers(list(range(editor.lines())), [], [])
+            return
+        import difflib
+        a = head.splitlines()
+        b = editor.text().splitlines()
+        added: list[int] = []
+        modified: list[int] = []
+        deleted: list[int] = []
+        for tag, _i1, _i2, j1, j2 in difflib.SequenceMatcher(
+                None, a, b, autojunk=False).get_opcodes():
+            if tag == "insert":
+                added.extend(range(j1, j2))
+            elif tag == "replace":
+                modified.extend(range(j1, j2))
+            elif tag == "delete":
+                deleted.append(j1)
+        editor.set_change_markers(added, modified, deleted)
 
     def _refresh_tab_title(self) -> None:
         for i in range(self.tabs.count()):

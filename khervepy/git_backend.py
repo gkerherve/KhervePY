@@ -114,6 +114,45 @@ def status(path: str) -> GitStatus:
     return GitStatus(branch, ahead, behind, staged, unstaged, untracked)
 
 
+def status_map(path: str) -> dict[str, str]:
+    """Map ``normcase(abspath(file)) -> single status letter`` for the tree.
+
+    Letters: ``?``/``A`` added, ``M``/``T`` modified, ``R``/``C`` renamed,
+    ``D`` deleted, ``U`` conflicted. Staged status wins over unstaged.
+    """
+    try:
+        st = status(path)
+    except GitError:
+        return {}
+    result: dict[str, str] = {}
+
+    def put(rel: str, code: str) -> None:
+        # Renames arrive as "old -> new"; colour the destination.
+        if " -> " in rel:
+            rel = rel.split(" -> ", 1)[1]
+        ap = os.path.normcase(os.path.abspath(os.path.join(path, rel)))
+        result.setdefault(ap, code)
+
+    for code, name in st.staged:
+        put(name, code)
+    for code, name in st.unstaged:
+        put(name, code)
+    for name in st.untracked:
+        put(name, "?")
+    return result
+
+
+def file_at_head(path: str, rel: str) -> Optional[str]:
+    """Return the committed (HEAD) text of ``rel``, or ``None`` if untracked."""
+    proc = subprocess.run(
+        ["git", "show", f"HEAD:{rel}"],
+        cwd=path, capture_output=True, text=True, **subprocess_flags(),
+    )
+    if proc.returncode != 0:
+        return None
+    return proc.stdout
+
+
 def branches(path: str) -> list[str]:
     out = run_git(["branch", "--format=%(refname:short)"], path)
     return [b.strip() for b in out.splitlines() if b.strip()]

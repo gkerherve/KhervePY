@@ -3,6 +3,18 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.23.0 — 2026-07-13
+
+### Added
+- **Uncommitted-change indicators**, refreshed live (debounced) as you edit:
+  - **Editor change bar**: a thin gutter next to the line numbers marks lines
+    added (green), modified (blue) or deleted (red) versus the last commit
+    (HEAD). New/untracked files show all lines green.
+  - **Project tree colours**: changed files are tinted by git status —
+    added/untracked green, modified blue, deleted red, conflicts amber — and
+    folders that contain changes are tinted too.
+- Backed by `git_backend.status_map()` and `git_backend.file_at_head()`.
+
 ## 0.22.3 — 2026-07-13
 
 ### Changed
