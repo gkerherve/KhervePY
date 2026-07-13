@@ -78,6 +78,12 @@ class MainWindow(QMainWindow):
         self._build_statusbar()
         self._apply_window_theme(self.settings.theme)
         self._restore_window()
+        # Safety net: also persist the layout on application quit, in case the
+        # window is torn down through a path that skips closeEvent.
+        from PyQt6.QtWidgets import QApplication
+        _app = QApplication.instance()
+        if _app is not None:
+            _app.aboutToQuit.connect(self._save_window)
 
         # Open whatever we were asked to open, else the last project.
         target = initial_path or self.settings.last_project
@@ -526,6 +532,29 @@ class MainWindow(QMainWindow):
                 self.tabs.setTabText(i, mark + w.display_name)
 
     # --- run -------------------------------------------------------------
+    # Import name -> pip distribution name, for the common cases where they
+    # differ. Anything not listed is installed under its own import name.
+    _PIP_NAMES = {
+        "cv2": "opencv-python",
+        "PIL": "pillow",
+        "sklearn": "scikit-learn",
+        "yaml": "pyyaml",
+        "bs4": "beautifulsoup4",
+        "Crypto": "pycryptodome",
+        "serial": "pyserial",
+        "dotenv": "python-dotenv",
+        "dateutil": "python-dateutil",
+        "OpenGL": "PyOpenGL",
+        "win32api": "pywin32",
+        "win32con": "pywin32",
+        "win32com": "pywin32",
+        "win32gui": "pywin32",
+        "wx": "wxPython",
+        "docx": "python-docx",
+        "pptx": "python-pptx",
+        "fitz": "PyMuPDF",
+    }
+
     def run_current(self) -> None:
         editor = self.current_editor()
         if not editor:
@@ -535,13 +564,17 @@ class MainWindow(QMainWindow):
         if not editor.path or not editor.path.endswith(".py"):
             self._status("Run supports .py files.")
             return
+        self._run_python_file(editor.path)
 
+    def _run_python_file(self, path: str) -> None:
         import sys
         from PyQt6.QtCore import QProcess
 
         self.output.clear()
+        self.output_dock.show()
         self.output_dock.raise_()
-        self._status(f"Running {editor.path}…")
+        self._status(f"Running {path}…")
+        self._last_run_path = path
 
         proc = QProcess(self)
         proc.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
@@ -551,11 +584,84 @@ class MainWindow(QMainWindow):
                 bytes(proc.readAllStandardOutput()).decode(errors="replace")
             )
         )
-        proc.finished.connect(
-            lambda code, _s: self._status(f"Process exited ({code}).")
-        )
-        proc.start(sys.executable, [editor.path])
+        proc.finished.connect(self._on_run_finished)
+        proc.start(sys.executable, [path])
         self._run_proc = proc  # keep a reference
+
+    def _on_run_finished(self, code: int, _status) -> None:
+        self._status(f"Process exited ({code}).")
+        if code == 0:
+            return
+        # A crash on a missing import is the most common first-run failure;
+        # offer to pip-install it into the interpreter that ran the script.
+        import re
+        m = re.search(
+            r"No module named ['\"]([\w.]+)['\"]", self.output.toPlainText()
+        )
+        if m:
+            self._offer_missing_module(m.group(1))
+
+    def _offer_missing_module(self, module: str) -> None:
+        import sys
+
+        top = module.split(".")[0]
+        pkg = self._PIP_NAMES.get(top, top)
+        note = f"<br><br>(pip package: <b>{pkg}</b>)" if pkg != top else ""
+        answer = QMessageBox.question(
+            self,
+            "Missing module",
+            f"The script stopped because <b>{top}</b> is not installed.<br><br>"
+            f"Install it with pip into<br><code>{sys.executable}</code>?{note}",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if answer == QMessageBox.StandardButton.Yes:
+            self._install_module(pkg)
+
+    def _install_module(self, pkg: str) -> None:
+        import sys
+        from PyQt6.QtCore import QProcess
+
+        self.output_dock.show()
+        self.output_dock.raise_()
+        self.output.appendPlainText(
+            f"\n$ {sys.executable} -m pip install {pkg}\n"
+        )
+        self._status(f"Installing {pkg}…")
+
+        proc = QProcess(self)
+        proc.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        proc.setWorkingDirectory(self.project_root)
+        proc.readyReadStandardOutput.connect(
+            lambda: self.output.insertPlainText(
+                bytes(proc.readAllStandardOutput()).decode(errors="replace")
+            )
+        )
+        proc.finished.connect(lambda c, _s: self._on_install_finished(c, pkg))
+        proc.start(sys.executable, ["-m", "pip", "install", pkg])
+        self._pip_proc = proc  # keep a reference
+
+    def _on_install_finished(self, code: int, pkg: str) -> None:
+        if code != 0:
+            self._status(f"pip install failed (exit {code}).")
+            QMessageBox.warning(
+                self, "Install failed",
+                f"pip could not install {pkg} (exit code {code}).\n"
+                "See the Output panel for details.",
+            )
+            return
+        self._status(f"Installed {pkg}.")
+        path = getattr(self, "_last_run_path", "")
+        if path and os.path.exists(path):
+            answer = QMessageBox.question(
+                self, "Installed",
+                f"<b>{pkg}</b> was installed successfully.<br>"
+                "Re-run the script now?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes,
+            )
+            if answer == QMessageBox.StandardButton.Yes:
+                self._run_python_file(path)
 
     # --- github ----------------------------------------------------------
     def set_github_token(self) -> None:
@@ -721,7 +827,14 @@ class MainWindow(QMainWindow):
         if geo is not None:
             self.restoreGeometry(geo)
         if state is not None:
+            # restoreState() re-applies each dock/toolbar position, size,
+            # tab grouping, floating state and visibility by objectName.
             self.restoreState(state)
+
+    def _save_window(self) -> None:
+        """Persist the current dock/toolbar layout and window geometry."""
+        self.settings.save_geometry(self.saveGeometry())
+        self.settings.save_state(self.saveState())
 
     def closeEvent(self, event) -> None:
         # Prompt for any unsaved editors.
@@ -741,11 +854,12 @@ class MainWindow(QMainWindow):
                     return
                 if answer == QMessageBox.StandardButton.Save and w.path:
                     w.save()
+        # Save the layout *before* tearing down child processes, so a slow or
+        # failing stop() can never cost the user their window positions.
+        self._save_window()
         self.terminal.stop()
         self.debugger.stop()
         for thread in list(self._gh_threads):
             thread.quit()
             thread.wait()
-        self.settings.save_geometry(self.saveGeometry())
-        self.settings.save_state(self.saveState())
         super().closeEvent(event)

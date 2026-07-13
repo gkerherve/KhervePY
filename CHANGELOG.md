@@ -3,6 +3,22 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.15.0 — 2026-07-13
+
+### Added
+- **Auto-install missing modules**: when a run fails with
+  `ModuleNotFoundError`, KhervePY now offers to `pip install` the missing
+  module into the interpreter that ran the script, streams the install into
+  the Output panel, and offers to re-run once it succeeds. A small
+  import-name → pip-name table handles the common mismatches (`cv2` →
+  `opencv-python`, `PIL` → `pillow`, `sklearn` → `scikit-learn`, …).
+
+### Changed
+- **Reliable window-layout memory**: the dock/toolbar layout and window
+  geometry are now saved *before* child processes are torn down at close, and
+  also on application quit, so panel positions (Project, Log, Git / GitHub,
+  Output, Terminal, …) are restored dependably on the next launch.
+
 ## 0.14.0 — 2026-07-13
 
 ### Added
