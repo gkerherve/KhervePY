@@ -3,6 +3,14 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.24.2 — 2026-07-13
+
+### Fixed
+- The latest commit's subject is no longer hidden behind ref badges. Badges are
+  now clipped to the Description column, `origin/HEAD` is dropped, a remote that
+  mirrors the current branch collapses to `origin`, long badges are elided, and
+  the subject always keeps room (with a `…` marker when refs overflow).
+
 ## 0.24.1 — 2026-07-13
 
 ### Changed

@@ -103,18 +103,33 @@ def max_lanes(layout: list[dict]) -> int:
 
 
 def _parse_refs(refs: str):
-    """Yield ``(display, color)`` badges for a git ``%D`` decoration string."""
-    for token in (t.strip() for t in refs.split(",") if t.strip()):
+    """Yield ``(display, color)`` badges for a git ``%D`` decoration string.
+
+    Noise is trimmed so the commit subject stays visible: ``origin/HEAD`` is
+    dropped, and a remote ref that just mirrors the current branch (e.g.
+    ``origin/my-branch`` when ``HEAD -> my-branch``) collapses to ``origin``.
+    """
+    tokens = [t.strip() for t in refs.split(",") if t.strip()]
+    head_branch = ""
+    for token in tokens:
         if token.startswith("HEAD ->"):
-            yield token[7:].strip(), "#2EA043"        # current branch
+            head_branch = token[7:].strip()
+
+    for token in tokens:
+        if token.endswith("/HEAD"):
+            continue                                   # e.g. origin/HEAD — noise
+        if token.startswith("HEAD ->"):
+            yield token[7:].strip(), "#2EA043"         # current branch
         elif token == "HEAD":
             yield "HEAD", "#2EA043"
         elif token.startswith("tag:"):
-            yield token[4:].strip(), "#C9A227"        # tag
+            yield token[4:].strip(), "#C9A227"         # tag
         elif "/" in token:
-            yield token, "#8250DF"                     # remote branch
+            remote, _, branch = token.partition("/")
+            # Collapse "origin/<current-branch>" to just the remote name.
+            yield (remote if branch == head_branch else token), "#8250DF"
         else:
-            yield token, "#1F6FEB"                     # local branch
+            yield token, "#1F6FEB"                      # local branch
 
 
 class GraphDelegate(QStyledItemDelegate):
@@ -186,22 +201,40 @@ class GraphDelegate(QStyledItemDelegate):
         painter.drawEllipse(QRectF(cx - self.DOT_R, cy - self.DOT_R,
                                    2 * self.DOT_R, 2 * self.DOT_R))
 
+    # A single badge is never wider than this; the subject always keeps at
+    # least this much room so the latest commit's message stays visible.
+    MAX_BADGE_W = 150
+    MIN_SUBJECT_W = 140
+
     def _paint_desc(self, painter, option, commit):
         rect = option.rect
+        painter.setClipRect(rect)  # never bleed into the Author/Date columns
         fm = painter.fontMetrics()
         x = rect.x() + 4
         cy = rect.center().y()
         h = fm.height()
 
+        # Leave room for the subject; badges may use the rest.
+        subject_room = min(self.MIN_SUBJECT_W, max(0, rect.width() - 20))
+        badge_limit = rect.right() - subject_room
+
         for name, color in _parse_refs(commit.get("refs", "")):
-            tw = fm.horizontalAdvance(name)
-            bw = tw + 10
+            label = fm.elidedText(name, Qt.TextElideMode.ElideRight,
+                                  self.MAX_BADGE_W)
+            bw = fm.horizontalAdvance(label) + 10
+            if x > rect.x() + 4 and x + bw > badge_limit:
+                # Out of room — mark that more refs exist and stop.
+                painter.setPen(QColor("#8B949E"))
+                painter.drawText(int(x), rect.y(), 14, rect.height(),
+                                 int(Qt.AlignmentFlag.AlignVCenter), "…")
+                x += 14
+                break
             badge = QRectF(x, cy - h / 2.0, bw, h)
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QColor(color))
             painter.drawRoundedRect(badge, 4, 4)
             painter.setPen(QColor("#FFFFFF"))
-            painter.drawText(badge, Qt.AlignmentFlag.AlignCenter, name)
+            painter.drawText(badge, Qt.AlignmentFlag.AlignCenter, label)
             x += bw + 4
 
         selected = option.state & QStyle.StateFlag.State_Selected
@@ -209,8 +242,8 @@ class GraphDelegate(QStyledItemDelegate):
             option.palette.highlightedText().color() if selected
             else option.palette.text().color()
         )
-        avail = rect.right() - x - 6
+        avail = max(30, rect.right() - x - 6)
         subj = fm.elidedText(commit.get("subject", ""),
-                             Qt.TextElideMode.ElideRight, max(10, avail))
-        painter.drawText(x, rect.y(), avail, rect.height(),
+                             Qt.TextElideMode.ElideRight, avail)
+        painter.drawText(int(x), rect.y(), avail, rect.height(),
                          int(Qt.AlignmentFlag.AlignVCenter), subj)
