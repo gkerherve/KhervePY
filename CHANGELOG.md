@@ -3,6 +3,14 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.25.0 — 2026-07-13
+
+### Changed
+- Log layout reworked: ref badges (branch/tag) now live in the **Graph**
+  column beside the rails, so the **Description** column shows only the commit
+  subject. Columns are reordered to **Graph › Description › Date › Author**, and
+  the author is shown compactly as **G Kerherve** (first initial + surname).
+
 ## 0.24.2 — 2026-07-13
 
 ### Fixed

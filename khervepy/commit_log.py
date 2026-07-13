@@ -33,6 +33,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from PyQt6.QtGui import QFontMetrics
+
 from khervepy import git_backend as gb
 from khervepy.commit_graph import GraphDelegate, build_lanes, max_lanes
 
@@ -41,6 +43,14 @@ _STATUS_COLOR = {
     "A": "#3FB950", "M": "#D29922", "D": "#F85149",
     "R": "#A371F7", "C": "#A371F7", "T": "#D29922",
 }
+
+
+def _short_author(name: str) -> str:
+    """``Gwilherm Kerherve`` -> ``G Kerherve`` (first initial + surname)."""
+    parts = name.split()
+    if len(parts) >= 2:
+        return f"{parts[0][0]} {parts[-1]}"
+    return name
 
 
 def _friendly_date(raw: str) -> str:
@@ -94,7 +104,7 @@ class CommitLog(QWidget):
         self.tree = QTreeWidget()
         self.tree.setRootIsDecorated(False)
         self.tree.setUniformRowHeights(True)
-        self.tree.setHeaderLabels(["Graph", "Description", "Author", "Date"])
+        self.tree.setHeaderLabels(["Graph", "Description", "Date", "Author"])
         self.tree.setColumnWidth(0, 90)
         self.tree.itemDoubleClicked.connect(self._activate_commit)
         self.tree.currentItemChanged.connect(self._on_commit_selected)
@@ -104,9 +114,9 @@ class CommitLog(QWidget):
         # Interactive on every column so the user can drag the dividers.
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         header.setStretchLastSection(False)
-        self.tree.setColumnWidth(1, 320)  # Description
-        self.tree.setColumnWidth(2, 140)  # Author
-        self.tree.setColumnWidth(3, 90)   # Date
+        self.tree.setColumnWidth(1, 300)  # Description
+        self.tree.setColumnWidth(2, 110)  # Date
+        self.tree.setColumnWidth(3, 120)  # Author
         splitter.addWidget(self.tree)
 
         # Full commit message (middle) — the graph's Description column is
@@ -158,11 +168,21 @@ class CommitLog(QWidget):
             return
 
         self._rows = build_lanes(commits)
-        self.tree.setColumnWidth(0, max_lanes(self._rows) * GraphDelegate.LANE_W + 12)
+        # Graph column holds the rails *and* the ref badges, so size it to fit
+        # both (rails on the left, the widest badge row to their right).
+        lanes_px = max_lanes(self._rows) * GraphDelegate.LANE_W
+        fm = QFontMetrics(self.tree.font())
+        badges_px = max(
+            (self._delegate.badges_width(row["commit"], fm) for row in self._rows),
+            default=0,
+        )
+        self.tree.setColumnWidth(0, lanes_px + badges_px + 14)
 
         for row in self._rows:
             c = row["commit"]
-            item = QTreeWidgetItem(["", "", c["author"], _friendly_date(c["date"])])
+            item = QTreeWidgetItem(
+                ["", "", _friendly_date(c["date"]), _short_author(c["author"])]
+            )
             item.setData(0, Qt.ItemDataRole.UserRole, c["full"])
             self.tree.addTopLevelItem(item)
         self.summary.setText(f"{len(self._rows)} commit(s)")

@@ -151,12 +151,13 @@ class GraphDelegate(QStyledItemDelegate):
             painter.save()
             self._selection_bg(painter, option)
             self._paint_graph(painter, option, rows[r])
+            self._paint_refs(painter, option, rows[r]["commit"])
             painter.restore()
             return
         if col == 1 and 0 <= r < len(rows):
             painter.save()
             self._selection_bg(painter, option)
-            self._paint_desc(painter, option, rows[r]["commit"])
+            self._paint_subject(painter, option, rows[r]["commit"])
             painter.restore()
             return
         super().paint(painter, option, index)
@@ -201,33 +202,38 @@ class GraphDelegate(QStyledItemDelegate):
         painter.drawEllipse(QRectF(cx - self.DOT_R, cy - self.DOT_R,
                                    2 * self.DOT_R, 2 * self.DOT_R))
 
-    # A single badge is never wider than this; the subject always keeps at
-    # least this much room so the latest commit's message stays visible.
+    # A single ref badge is never drawn wider than this.
     MAX_BADGE_W = 150
-    MIN_SUBJECT_W = 140
 
-    def _paint_desc(self, painter, option, commit):
+    def badges_width(self, commit, fm) -> int:
+        """Total pixel width of the ref badges for ``commit`` (for column 0)."""
+        total = 0
+        for name, _color in _parse_refs(commit.get("refs", "")):
+            label = fm.elidedText(name, Qt.TextElideMode.ElideRight,
+                                  self.MAX_BADGE_W)
+            total += fm.horizontalAdvance(label) + 10 + 4
+        return total
+
+    def _paint_refs(self, painter, option, commit):
+        """Ref badges (branch/tag) sit in the graph column, after the rails."""
+        refs = list(_parse_refs(commit.get("refs", "")))
+        if not refs:
+            return
         rect = option.rect
-        painter.setClipRect(rect)  # never bleed into the Author/Date columns
+        painter.setClipRect(rect)
         fm = painter.fontMetrics()
-        x = rect.x() + 4
+        lanes_px = max_lanes(self._rows()) * self.LANE_W
+        x = rect.x() + lanes_px + 4
         cy = rect.center().y()
         h = fm.height()
-
-        # Leave room for the subject; badges may use the rest.
-        subject_room = min(self.MIN_SUBJECT_W, max(0, rect.width() - 20))
-        badge_limit = rect.right() - subject_room
-
-        for name, color in _parse_refs(commit.get("refs", "")):
+        for name, color in refs:
             label = fm.elidedText(name, Qt.TextElideMode.ElideRight,
                                   self.MAX_BADGE_W)
             bw = fm.horizontalAdvance(label) + 10
-            if x > rect.x() + 4 and x + bw > badge_limit:
-                # Out of room — mark that more refs exist and stop.
+            if x > rect.x() + lanes_px + 4 and x + bw > rect.right():
                 painter.setPen(QColor("#8B949E"))
                 painter.drawText(int(x), rect.y(), 14, rect.height(),
                                  int(Qt.AlignmentFlag.AlignVCenter), "…")
-                x += 14
                 break
             badge = QRectF(x, cy - h / 2.0, bw, h)
             painter.setPen(Qt.PenStyle.NoPen)
@@ -237,13 +243,17 @@ class GraphDelegate(QStyledItemDelegate):
             painter.drawText(badge, Qt.AlignmentFlag.AlignCenter, label)
             x += bw + 4
 
+    def _paint_subject(self, painter, option, commit):
+        rect = option.rect
+        painter.setClipRect(rect)
+        fm = painter.fontMetrics()
         selected = option.state & QStyle.StateFlag.State_Selected
         painter.setPen(
             option.palette.highlightedText().color() if selected
             else option.palette.text().color()
         )
-        avail = max(30, rect.right() - x - 6)
+        avail = max(10, rect.width() - 10)
         subj = fm.elidedText(commit.get("subject", ""),
                              Qt.TextElideMode.ElideRight, avail)
-        painter.drawText(int(x), rect.y(), avail, rect.height(),
+        painter.drawText(rect.x() + 4, rect.y(), avail, rect.height(),
                          int(Qt.AlignmentFlag.AlignVCenter), subj)
