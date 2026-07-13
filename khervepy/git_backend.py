@@ -223,6 +223,11 @@ def show_commit(path: str, rev: str) -> str:
     return run_git(["show", "--stat", "--patch", rev], path, check=False)
 
 
+def commit_message(path: str, rev: str) -> str:
+    """Return the full commit message (subject + body) for ``rev``."""
+    return run_git(["show", "-s", "--pretty=format:%B", rev], path, check=False)
+
+
 def commit_files(path: str, rev: str) -> list[tuple[str, str]]:
     """Return ``(status, filepath)`` for files changed in ``rev``."""
     out = run_git(

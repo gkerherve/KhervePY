@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QPlainTextEdit,
     QPushButton,
     QSplitter,
     QTreeWidget,
@@ -86,6 +87,18 @@ class CommitLog(QWidget):
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         splitter.addWidget(self.tree)
 
+        # Full commit message (middle) — the graph's Description column is
+        # truncated, so show the whole subject + body here for the selection.
+        msg_panel = QWidget()
+        mp = QVBoxLayout(msg_panel)
+        mp.setContentsMargins(0, 4, 0, 0)
+        mp.addWidget(QLabel("Commit message"))
+        self.message = QPlainTextEdit()
+        self.message.setReadOnly(True)
+        self.message.setPlaceholderText("Select a commit to see its full message.")
+        mp.addWidget(self.message, 1)
+        splitter.addWidget(msg_panel)
+
         # Files changed (bottom).
         files_panel = QWidget()
         fp = QVBoxLayout(files_panel)
@@ -98,8 +111,9 @@ class CommitLog(QWidget):
         fp.addWidget(self.files_tree, 1)
         splitter.addWidget(files_panel)
 
-        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(0, 4)
         splitter.setStretchFactor(1, 1)
+        splitter.setStretchFactor(2, 1)
         layout.addWidget(splitter, 1)
 
     # --- data ------------------------------------------------------------
@@ -110,6 +124,7 @@ class CommitLog(QWidget):
     def refresh(self) -> None:
         self.tree.clear()
         self.files_tree.clear()
+        self.message.clear()
         self._rows = []
         if not self.repo_path:
             self.summary.setText("Not a Git repository.")
@@ -135,11 +150,16 @@ class CommitLog(QWidget):
     # --- files tree ------------------------------------------------------
     def _on_commit_selected(self, current, _previous) -> None:
         self.files_tree.clear()
+        self.message.clear()
         if current is None or not self.repo_path:
             return
         rev = current.data(0, Qt.ItemDataRole.UserRole)
         if not rev:
             return
+        try:
+            self.message.setPlainText(gb.commit_message(self.repo_path, rev).strip())
+        except gb.GitError:
+            pass
         try:
             files = gb.commit_files(self.repo_path, rev)
         except gb.GitError:

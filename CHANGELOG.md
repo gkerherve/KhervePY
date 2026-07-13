@@ -3,6 +3,14 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.17.0 — 2026-07-13
+
+### Added
+- **Commit message panel** in the Log dock, between the commit graph and the
+  Files-changed tree: selecting a commit shows its full subject + body (the
+  graph's Description column is truncated). Backed by
+  `git_backend.commit_message()`.
+
 ## 0.16.0 — 2026-07-13
 
 ### Added
