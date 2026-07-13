@@ -18,5 +18,9 @@ env/
 .DS_Store
 Thumbs.db
 
+# Packaging output
+Output/
+*.spec.bak
+
 # KhervePY runtime
 *.log

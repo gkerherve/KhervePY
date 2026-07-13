@@ -47,6 +47,22 @@ You can also pass a file or folder to open on startup:
 python KhervePY.py path/to/project
 ```
 
+## Building distributables
+
+KhervePY freezes to a standalone app with PyInstaller and ships as a zip and
+(on Windows) an Inno Setup installer.
+
+```bash
+pip install -r requirements-dev.txt
+python build.py              # freeze + KhervePY-<version>-<platform>.zip
+python build.py --installer  # also build the Windows installer (needs Inno Setup)
+python build.py --clean      # wipe build/ dist/ Output/ first
+```
+
+Outputs land in `dist/` (frozen app + zip) and `Output/` (installer). The
+installer version is taken from `khervepy/__version__` automatically. To
+regenerate the app icon, run `python packaging/make_icon.py`.
+
 ## GitHub setup
 
 To clone private repos and to fork projects, add a GitHub personal access token

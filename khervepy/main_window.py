@@ -30,6 +30,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from PyQt6.QtGui import QIcon
+
 from khervepy import __app_name__, __version__, git_backend as gb
 from khervepy.editor import CodeEditor
 from khervepy.file_tree import FileTree
@@ -54,6 +56,10 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle(f"{__app_name__} {__version__}")
         self.resize(1200, 780)
+        from khervepy.resources import icon_path
+        _icon = icon_path()
+        if _icon:
+            self.setWindowIcon(QIcon(_icon))
 
         self._build_tabs()
         self._build_docks()

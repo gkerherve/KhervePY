@@ -24,12 +24,18 @@ def main() -> int:
         )
         return 1
 
+    from PyQt6.QtGui import QIcon
+
     from khervepy import __app_name__
     from khervepy.main_window import MainWindow
+    from khervepy.resources import icon_path
 
     app = QApplication(sys.argv)
     app.setApplicationName(__app_name__)
     app.setOrganizationName("Gwilherm Kerherve")
+    icon = icon_path()
+    if icon:
+        app.setWindowIcon(QIcon(icon))
 
     initial = sys.argv[1] if len(sys.argv) > 1 else None
     window = MainWindow(initial_path=initial)

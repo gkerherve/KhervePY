@@ -3,6 +3,21 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.7.0 — 2026-07-13
+
+### Added
+- **Packaging**: freeze KhervePY into a standalone app and build distributables.
+  - `packaging/khervepy.spec` — PyInstaller one-folder, windowed build.
+  - `packaging/khervepy.iss` — Inno Setup installer script (Windows), version
+    injected at build time; bundles a Start-Menu entry, optional desktop icon
+    and the GPL licence page.
+  - `build.py` — cross-platform orchestrator: freezes the app, writes a
+    `KhervePY-<version>-<platform>.zip`, and builds the installer when run on
+    Windows with Inno Setup present (`--installer`, `--clean` flags).
+  - `packaging/make_icon.py` plus generated `khervepy.png` / `khervepy.ico`
+    (a two-tone "Py" wordmark on an editor tile); the app now shows its icon.
+  - `requirements-dev.txt` pinning PyInstaller.
+
 ## 0.6.0 — 2026-07-13
 
 ### Added

@@ -15,6 +15,9 @@ dependencies = [
     "PyQt6-QScintilla>=2.14",
 ]
 
+[project.optional-dependencies]
+dev = ["pyinstaller>=6.0"]
+
 [project.scripts]
 khervepy = "khervepy.app:main"
 
