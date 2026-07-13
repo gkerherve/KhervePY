@@ -3,6 +3,14 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.12.0 — 2026-07-13
+
+### Added
+- **Six more highlighting themes** (13 total): Nord, Gruvbox Dark, Tokyo Night,
+  GitHub Dark, Material Ocean and Cobalt2. Each colours keywords, strings,
+  numbers, class/function names, decorators and operators distinctly, and all
+  appear in the toolbar theme picker.
+
 ## 0.11.0 — 2026-07-13
 
 ### Added
