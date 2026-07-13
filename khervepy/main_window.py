@@ -88,6 +88,7 @@ class MainWindow(QMainWindow):
         _app = QApplication.instance()
         if _app is not None:
             _app.aboutToQuit.connect(self._save_window)
+            _app.aboutToQuit.connect(self._save_open_files)
 
         # Open whatever we were asked to open, else the last project.
         target = initial_path or self.settings.last_project
@@ -95,6 +96,8 @@ class MainWindow(QMainWindow):
             self.open_path(target)
         else:
             self.set_project_root(self.project_root)
+        # Reopen the editor tabs from the previous session.
+        self._restore_open_files()
 
     # --- construction ----------------------------------------------------
     def _build_tabs(self) -> None:
@@ -973,6 +976,26 @@ class MainWindow(QMainWindow):
         self.settings.save_geometry(self.saveGeometry())
         self.settings.save_state(self.saveState())
 
+    def _save_open_files(self) -> None:
+        """Remember the open editor tabs (and the active one) for next launch."""
+        paths = []
+        for i in range(self.tabs.count()):
+            w = self.tabs.widget(i)
+            if isinstance(w, CodeEditor) and w.path:
+                paths.append(w.path)
+        self.settings.open_files = paths
+        cur = self.current_editor()
+        self.settings.active_file = cur.path if cur and cur.path else ""
+
+    def _restore_open_files(self) -> None:
+        """Reopen the tabs saved by the previous session, focusing the last."""
+        for path in self.settings.open_files:
+            if os.path.isfile(path):
+                self.open_path(path)
+        active = self.settings.active_file
+        if active and os.path.isfile(active):
+            self.open_path(active)  # dedups → just re-focuses the tab
+
     def closeEvent(self, event) -> None:
         # Prompt for any unsaved editors.
         for i in range(self.tabs.count()):
@@ -997,6 +1020,7 @@ class MainWindow(QMainWindow):
         # Save the layout *before* tearing down child processes, so a slow or
         # failing stop() can never cost the user their window positions.
         self._save_window()
+        self._save_open_files()
         self.terminal.stop()
         self.debugger.stop()
         for thread in list(self._gh_threads):

@@ -78,6 +78,23 @@ class Settings:
     def last_project(self, value: str) -> None:
         self._q.setValue("recent/last_project", value)
 
+    # --- open editor session ---------------------------------------------
+    @property
+    def open_files(self) -> list[str]:
+        return self._q.value("session/open_files", [], type=list) or []
+
+    @open_files.setter
+    def open_files(self, value: list[str]) -> None:
+        self._q.setValue("session/open_files", list(value))
+
+    @property
+    def active_file(self) -> str:
+        return self._q.value("session/active_file", "", type=str)
+
+    @active_file.setter
+    def active_file(self, value: str) -> None:
+        self._q.setValue("session/active_file", value)
+
     # --- window ----------------------------------------------------------
     def save_geometry(self, geometry) -> None:
         self._q.setValue("window/geometry", geometry)

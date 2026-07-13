@@ -3,6 +3,12 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.19.0 — 2026-07-13
+
+### Added
+- **Session memory for open files**: the editor tabs you had open (and which
+  one was active) are remembered on close and reopened on the next launch.
+
 ## 0.18.3 — 2026-07-13
 
 ### Changed
