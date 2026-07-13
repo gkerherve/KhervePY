@@ -915,7 +915,7 @@ class MainWindow(QMainWindow):
 
     # --- compact "run & commit" cockpit ----------------------------------
     def enter_compact_mode(self) -> None:
-        """Collapse to a small window: Log (+ commit message) left, Git right."""
+        """Collapse to a small window: Terminal left, Log (+ commit msg) right."""
         if self._compact:
             return
         # Remember the full layout so Maximise can restore it verbatim.
@@ -933,12 +933,12 @@ class MainWindow(QMainWindow):
                   self.diff_dock, self.git_dock):
             d.hide()
 
-        # Left: Log (commit graph + full commit message).  Right: Git / GitHub.
-        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.log_dock)
-        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.git_dock)
-        for d in (self.log_dock, self.git_dock):
+        # Left: Terminal.  Right: Log (commit graph + full commit message).
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.terminal_dock)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.log_dock)
+        for d in (self.terminal_dock, self.log_dock):
             d.show()
-        self.log_dock.raise_()
+        self.terminal_dock.raise_()
 
         self.compact_toolbar.show()
         self.resize(1000, 560)

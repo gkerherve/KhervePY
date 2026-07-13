@@ -3,12 +3,11 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
-## 0.18.1 — 2026-07-13
+## 0.18.2 — 2026-07-13
 
 ### Changed
-- The compact cockpit now shows the **Log** (commit graph + full commit
-  message) on the left and the **Git / GitHub** panel on the right, instead of
-  Terminal/Output.
+- Compact cockpit layout: **Terminal** on the left, **Log** (commit graph +
+  full commit message) on the right.
 
 ## 0.18.0 — 2026-07-13
 
