@@ -160,6 +160,19 @@ def _fork(p, px, color):
     p.drawPolyline(_poly(px, [(0.32, 0.33), (0.32, 0.44), (0.5, 0.50), (0.68, 0.44), (0.68, 0.33)]))
 
 
+def _branch(p, px, color):
+    # git-branch glyph: a trunk with one branch splitting off.
+    p.drawLine(_P(px, 0.34, 0.24), _P(px, 0.34, 0.78))
+    p.drawPolyline(_poly(px, [(0.34, 0.50), (0.52, 0.50), (0.64, 0.40)]))
+    p.setBrush(QBrush(color))
+    p.drawEllipse(QRectF(_P(px, 0.27, 0.70), _P(px, 0.41, 0.84)))  # trunk bottom
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.drawEllipse(QRectF(_P(px, 0.27, 0.18), _P(px, 0.41, 0.32)))  # trunk top
+    p.setBrush(QBrush(color))
+    p.drawEllipse(QRectF(_P(px, 0.59, 0.28), _P(px, 0.73, 0.42)))  # branch node
+    p.setBrush(Qt.BrushStyle.NoBrush)
+
+
 def _packages(p, px, color):
     p.drawRect(QRectF(_P(px, 0.24, 0.30), _P(px, 0.76, 0.80)))
     p.drawLine(_P(px, 0.5, 0.30), _P(px, 0.5, 0.80))
@@ -167,6 +180,7 @@ def _packages(p, px, color):
 
 
 _GLYPHS = {
+    "branch": _branch,
     "folder": _folder,
     "file": _file,
     "new": _new,

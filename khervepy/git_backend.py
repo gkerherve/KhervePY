@@ -116,6 +116,35 @@ def branches(path: str) -> list[str]:
     return [b.strip() for b in out.splitlines() if b.strip()]
 
 
+def remote_branches(path: str) -> list[str]:
+    """Return remote-tracking branches (e.g. ``origin/main``), minus HEAD."""
+    out = run_git(["branch", "-r", "--format=%(refname:short)"], path, check=False)
+    return [
+        b.strip() for b in out.splitlines()
+        if b.strip() and "->" not in b
+    ]
+
+
+def init(path: str) -> None:
+    run_git(["init"], path)
+
+
+def fetch(path: str, remote: str = "origin") -> str:
+    return run_git(["fetch", remote], path, check=False)
+
+
+def checkout_track(path: str, remote_branch: str) -> None:
+    """Check out a remote branch, creating a local tracking branch for it.
+
+    Falls back to a plain checkout if the local branch already exists.
+    """
+    local = remote_branch.split("/", 1)[1] if "/" in remote_branch else remote_branch
+    if local in branches(path):
+        run_git(["checkout", local], path)
+        return
+    run_git(["checkout", "--track", remote_branch], path)
+
+
 def stage(path: str, files: list[str]) -> None:
     run_git(["add", "--", *files], path)
 

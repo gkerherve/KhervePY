@@ -38,6 +38,7 @@ from khervepy.editor import CodeEditor
 from khervepy.file_tree import FileTree
 from khervepy.git_panel import _Worker
 from khervepy.github_dialog import TokenDialog
+from khervepy.branch_widget import BranchWidget
 from khervepy.find import FindBar, FindInFilesDialog
 from khervepy.search_dock import SearchDock
 from khervepy.terminal import Terminal
@@ -179,6 +180,13 @@ class MainWindow(QMainWindow):
 
         # Icons are drawn in the toolbar's text colour so they suit the OS theme.
         glyph_color = self.palette().color(QPalette.ColorRole.WindowText)
+
+        # PyCharm-style Git branch chip, first on the bar.
+        self.branch_widget = BranchWidget(self, glyph_color)
+        tb.addWidget(self.branch_widget)
+        tb.addSeparator()
+        # Keep the chip in sync whenever the Git panel refreshes.
+        self.git_panel.changed.connect(self.branch_widget.refresh)
 
         def add(glyph, text, slot, shortcut=None, tip=None):
             act = QAction(icons.icon(glyph, glyph_color), text, self)
@@ -338,6 +346,8 @@ class MainWindow(QMainWindow):
         self.settings.last_project = path
         self.settings.push_recent_project(path)
         self._rebuild_recent_menu()
+        if hasattr(self, "branch_widget"):
+            self.branch_widget.refresh()
         self.setWindowTitle(f"{__app_name__} {__version__} — {os.path.basename(path) or path}")
 
     def open_path(self, path: str) -> None:

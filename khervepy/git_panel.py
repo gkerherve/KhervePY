@@ -56,6 +56,7 @@ class GitPanel(QWidget):
     repo_cloned = pyqtSignal(str)  # emits the new working-copy path
     status_message = pyqtSignal(str)
     diff_requested = pyqtSignal(str, bool)  # (file, staged)
+    changed = pyqtSignal()  # repo state refreshed
 
     def __init__(self, settings, parent=None):
         super().__init__(parent)
@@ -185,6 +186,8 @@ class GitPanel(QWidget):
             self.info.setText("  ".join(bits))
         except gb.GitError as exc:
             self.info.setText(f"git error: {exc}")
+        finally:
+            self.changed.emit()
 
     def _add_file(self, label: str, name: str, staged: bool) -> None:
         item = QListWidgetItem(label)

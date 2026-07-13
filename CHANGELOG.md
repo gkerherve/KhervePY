@@ -3,6 +3,22 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.10.0 — 2026-07-13
+
+### Added
+- **PyCharm-style Git branch chip** on the toolbar (`khervepy/branch_widget.py`).
+  Shows the current branch — auto-detected the moment a local folder is opened —
+  and drops down to a menu that mirrors PyCharm's: a header showing the
+  signed-in GitHub account and the repository's remote, then Update (Pull),
+  Commit, Push, Fetch and New Branch, followed by checkout lists of **Local**
+  branches (current one ticked) and **Remote** branches (checked out as new
+  tracking branches). When the folder isn't a repo yet, the menu offers Clone,
+  Fork or "Create Git repository here".
+- `git_backend` helpers: `remote_branches()`, `fetch()`, `init()`,
+  `checkout_track()`; a new `branch` glyph icon.
+- The Git panel emits a `changed` signal so the chip stays in sync after any
+  VCS action.
+
 ## 0.9.0 — 2026-07-13
 
 ### Added
