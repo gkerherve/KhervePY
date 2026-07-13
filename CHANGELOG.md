@@ -3,6 +3,17 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.2.0 — 2026-07-13
+
+### Added
+- In-editor **Find/Replace bar** (Ctrl+F / Ctrl+H) with case, whole-word and
+  regex toggles, find next/previous and replace-all, driven by QScintilla's
+  own search so matches highlight and scroll into view.
+- **Find / Replace in Files** dialog (Ctrl+Shift+F): search every text file in
+  the project, grouped results with match counts, double-click to jump to the
+  line, and project-wide replace that preserves UTF-8 + `\n` line endings.
+- New **Edit** menu hosting the find/replace actions.
+
 ## 0.1.0 — 2026-07-12
 
 Initial release. First working foundation of the KhervePY IDE.

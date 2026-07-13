@@ -26,12 +26,14 @@ from PyQt6.QtWidgets import (
     QPlainTextEdit,
     QTabWidget,
     QToolBar,
+    QVBoxLayout,
     QWidget,
 )
 
 from khervepy import __app_name__, __version__, git_backend as gb
 from khervepy.editor import CodeEditor
 from khervepy.file_tree import FileTree
+from khervepy.find import FindBar, FindInFilesDialog
 from khervepy.git_panel import GitPanel
 from khervepy.package_manager import PackageManager
 from khervepy.settings import Settings
@@ -71,7 +73,16 @@ class MainWindow(QMainWindow):
         self.tabs.setDocumentMode(True)
         self.tabs.tabCloseRequested.connect(self._close_tab)
         self.tabs.currentChanged.connect(self._on_tab_changed)
-        self.setCentralWidget(self.tabs)
+
+        # The centre stacks the editor tabs above a hideable find/replace bar.
+        self.find_bar = FindBar(self.current_editor)
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(self.tabs, 1)
+        layout.addWidget(self.find_bar)
+        self.setCentralWidget(container)
 
     def _build_docks(self) -> None:
         # Project tree (left).
@@ -126,6 +137,10 @@ class MainWindow(QMainWindow):
         tb.addSeparator()
         add("Run", self.run_current, "F5", "Run the current Python file")
         tb.addSeparator()
+        add("Find", lambda: self.find_bar.open(replace=False), "Ctrl+F")
+        add("Replace", lambda: self.find_bar.open(replace=True), "Ctrl+H")
+        add("Find in Files", self.find_in_files, "Ctrl+Shift+F")
+        tb.addSeparator()
         add("Commit+Push", self.quick_commit_push, "Ctrl+Shift+P",
             "Stage all, commit and push in one step")
         add("Clone", self.git_panel.clone_dialog)
@@ -159,6 +174,14 @@ class MainWindow(QMainWindow):
         self._rebuild_recent_menu()
         file_menu.addSeparator()
         file_menu.addAction("Quit", self.close)
+
+        edit_menu = bar.addMenu("&Edit")
+        edit_menu.addAction("Find…", QKeySequence("Ctrl+F"),
+                            lambda: self.find_bar.open(replace=False))
+        edit_menu.addAction("Replace…", QKeySequence("Ctrl+H"),
+                            lambda: self.find_bar.open(replace=True))
+        edit_menu.addAction("Find in Files…", QKeySequence("Ctrl+Shift+F"),
+                            self.find_in_files)
 
         view_menu = bar.addMenu("&View")
         view_menu.addAction(self.tree_dock.toggleViewAction())
@@ -209,6 +232,20 @@ class MainWindow(QMainWindow):
         index = self.tabs.addTab(editor, editor.display_name)
         self.tabs.setCurrentIndex(index)
         self._status(f"Opened {path}")
+
+    def open_at_line(self, path: str, line: int) -> None:
+        """Open ``path`` (if needed) and scroll to ``line`` (1-based)."""
+        self.open_path(path)
+        editor = self.current_editor()
+        if editor is not None and editor.path == path:
+            editor.setCursorPosition(max(0, line - 1), 0)
+            editor.ensureLineVisible(max(0, line - 1))
+            editor.setFocus()
+
+    def find_in_files(self) -> None:
+        dlg = FindInFilesDialog(self.project_root, self)
+        dlg.open_location.connect(self.open_at_line)
+        dlg.show()
 
     def new_file(self) -> None:
         editor = CodeEditor(None, font_size=self.settings.font_size)
