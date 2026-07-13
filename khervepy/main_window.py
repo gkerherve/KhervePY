@@ -337,6 +337,32 @@ class MainWindow(QMainWindow):
         edit_menu.addAction("Find in Files…", QKeySequence("Ctrl+Shift+F"),
                             self.find_in_files)
 
+        code_menu = bar.addMenu("&Code")
+        code_menu.addAction("Comment with Line Comment", QKeySequence("Ctrl+/"),
+                            lambda: self._code_action("toggle_line_comment"))
+        code_menu.addAction("Comment with Block Comment",
+                            QKeySequence("Ctrl+Shift+/"),
+                            lambda: self._code_action("toggle_block_comment"))
+        code_menu.addSeparator()
+        code_menu.addAction("Duplicate Line/Selection", QKeySequence("Ctrl+D"),
+                            lambda: self._code_action("duplicate_line"))
+        code_menu.addAction("Delete Line", QKeySequence("Ctrl+Shift+K"),
+                            lambda: self._code_action("delete_line"))
+        code_menu.addAction("Move Line Up", QKeySequence("Alt+Shift+Up"),
+                            lambda: self._code_action("move_line_up"))
+        code_menu.addAction("Move Line Down", QKeySequence("Alt+Shift+Down"),
+                            lambda: self._code_action("move_line_down"))
+        code_menu.addSeparator()
+        code_menu.addAction("Collapse/Expand", QKeySequence("Ctrl+."),
+                            lambda: self._code_action("toggle_fold"))
+        code_menu.addAction("Collapse All", QKeySequence("Ctrl+Shift+-"),
+                            lambda: self._code_action("fold_all"))
+        code_menu.addAction("Expand All", QKeySequence("Ctrl+Shift+="),
+                            lambda: self._code_action("unfold_all"))
+        code_menu.addSeparator()
+        code_menu.addAction("Go to Line…", QKeySequence("Ctrl+G"),
+                            self._go_to_line)
+
         view_menu = bar.addMenu("&View")
         view_menu.addAction(self.tree_dock.toggleViewAction())
         view_menu.addAction(self.search_dock.toggleViewAction())
@@ -547,6 +573,26 @@ class MainWindow(QMainWindow):
     def current_editor(self) -> CodeEditor | None:
         w = self.tabs.currentWidget()
         return w if isinstance(w, CodeEditor) else None
+
+    # --- Code menu -------------------------------------------------------
+    def _code_action(self, method: str) -> None:
+        """Dispatch a Code-menu command to the focused editor."""
+        editor = self.current_editor()
+        if editor is not None:
+            getattr(editor, method)()
+
+    def _go_to_line(self) -> None:
+        editor = self.current_editor()
+        if editor is None:
+            return
+        current = editor.getCursorPosition()[0] + 1
+        n, ok = QInputDialog.getInt(
+            self, "Go to line", "Line:", current, 1, max(1, editor.lines())
+        )
+        if ok:
+            editor.setCursorPosition(n - 1, 0)
+            editor.ensureLineVisible(n - 1)
+            editor.setFocus()
 
     def save_current(self) -> None:
         editor = self.current_editor()

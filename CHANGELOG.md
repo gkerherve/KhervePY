@@ -3,6 +3,20 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.24.0 — 2026-07-13
+
+### Added
+- **Code menu** with the standard PyCharm/VS Code editor shortcuts:
+  - Comment with Line Comment — `Ctrl+/` (language-aware token, toggles,
+    keeps the selection)
+  - Comment with Block Comment — `Ctrl+Shift+/`
+  - Duplicate Line/Selection — `Ctrl+D`
+  - Delete Line — `Ctrl+Shift+K`
+  - Move Line Up / Down — `Alt+Shift+Up` / `Alt+Shift+Down`
+  - Collapse/Expand fold — `Ctrl+.`
+  - Collapse All / Expand All — `Ctrl+Shift+-` / `Ctrl+Shift+=`
+  - Go to Line… — `Ctrl+G`
+
 ## 0.23.0 — 2026-07-13
 
 ### Added

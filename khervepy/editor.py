@@ -143,6 +143,117 @@ class CodeEditor(QsciScintilla):
         for ln in deleted:
             self.markerAdd(min(ln, last), self._MARK_DELETED)
 
+    # --- editing commands (Code menu) ------------------------------------
+    # Line- and block-comment tokens by file extension.
+    _LINE_TOKENS = {
+        ".py": "#", ".pyw": "#", ".sh": "#", ".rb": "#", ".yaml": "#",
+        ".yml": "#", ".toml": "#", ".cfg": "#", ".conf": "#", ".r": "#",
+        ".pl": "#", ".ini": ";",
+        ".js": "//", ".jsx": "//", ".ts": "//", ".tsx": "//", ".c": "//",
+        ".h": "//", ".cpp": "//", ".hpp": "//", ".cc": "//", ".cs": "//",
+        ".java": "//", ".go": "//", ".rs": "//", ".php": "//", ".swift": "//",
+        ".kt": "//", ".scala": "//",
+        ".sql": "--", ".lua": "--",
+    }
+    _BLOCK_TOKENS = {
+        ".js": ("/*", "*/"), ".jsx": ("/*", "*/"), ".ts": ("/*", "*/"),
+        ".tsx": ("/*", "*/"), ".c": ("/*", "*/"), ".h": ("/*", "*/"),
+        ".cpp": ("/*", "*/"), ".hpp": ("/*", "*/"), ".cc": ("/*", "*/"),
+        ".cs": ("/*", "*/"), ".java": ("/*", "*/"), ".go": ("/*", "*/"),
+        ".rs": ("/*", "*/"), ".php": ("/*", "*/"), ".swift": ("/*", "*/"),
+        ".kt": ("/*", "*/"), ".css": ("/*", "*/"), ".scss": ("/*", "*/"),
+        ".html": ("<!--", "-->"), ".xml": ("<!--", "-->"),
+    }
+
+    def _ext(self) -> str:
+        return os.path.splitext(self.path or "")[1].lower()
+
+    def toggle_line_comment(self) -> None:
+        token = self._LINE_TOKENS.get(self._ext())
+        if not token:
+            self.toggle_block_comment()
+            return
+        had_selection = self.hasSelectedText()
+        if had_selection:
+            l1, _i1, l2, i2 = self.getSelection()
+            if l2 > l1 and i2 == 0:  # selection ends at a line start
+                l2 -= 1
+        else:
+            l1, _ = self.getCursorPosition()
+            l2 = l1
+        lines = range(l1, l2 + 1)
+        # Comment unless every non-blank line is already commented.
+        commented = all(
+            not self.text(ln).strip() or self.text(ln).strip().startswith(token)
+            for ln in lines
+        )
+        self.beginUndoAction()
+        for ln in lines:
+            raw = self.text(ln).rstrip("\r\n")
+            if not raw.strip():
+                continue
+            if commented:
+                idx = raw.find(token)
+                if idx < 0:
+                    continue
+                length = len(token)
+                if raw[idx + length: idx + length + 1] == " ":
+                    length += 1
+                self.setSelection(ln, idx, ln, idx + length)
+                self.removeSelectedText()
+            else:
+                indent = len(raw) - len(raw.lstrip())
+                self.insertAt(token + " ", ln, indent)
+        self.endUndoAction()
+        # Preserve the selection so repeated toggles work; else advance a line.
+        if had_selection:
+            self.setSelection(l1, 0, l2, len(self.text(l2).rstrip("\r\n")))
+        else:
+            self.setCursorPosition(min(l1 + 1, max(0, self.lines() - 1)), 0)
+
+    def toggle_block_comment(self) -> None:
+        pair = self._BLOCK_TOKENS.get(self._ext())
+        if not pair:
+            return
+        open_t, close_t = pair
+        self.beginUndoAction()
+        if self.hasSelectedText():
+            sel = self.selectedText()
+            stripped = sel.strip()
+            if stripped.startswith(open_t) and stripped.endswith(close_t):
+                inner = stripped[len(open_t):-len(close_t)].strip()
+                self.replaceSelectedText(inner)
+            else:
+                self.replaceSelectedText(f"{open_t} {sel} {close_t}")
+        else:
+            line, _ = self.getCursorPosition()
+            raw = self.text(line).rstrip("\r\n")
+            self.setSelection(line, 0, line, len(raw))
+            self.replaceSelectedText(f"{open_t} {raw.strip()} {close_t}")
+        self.endUndoAction()
+
+    def duplicate_line(self) -> None:
+        self.SendScintilla(QsciScintilla.SCI_SELECTIONDUPLICATE)
+
+    def delete_line(self) -> None:
+        self.SendScintilla(QsciScintilla.SCI_LINEDELETE)
+
+    def move_line_up(self) -> None:
+        self.SendScintilla(QsciScintilla.SCI_MOVESELECTEDLINESUP)
+
+    def move_line_down(self) -> None:
+        self.SendScintilla(QsciScintilla.SCI_MOVESELECTEDLINESDOWN)
+
+    def toggle_fold(self) -> None:
+        line, _ = self.getCursorPosition()
+        self.foldLine(line)
+
+    def fold_all(self) -> None:
+        self.SendScintilla(QsciScintilla.SCI_FOLDALL, 0)  # SC_FOLDACTION_CONTRACT
+
+    def unfold_all(self) -> None:
+        self.SendScintilla(QsciScintilla.SCI_FOLDALL, 1)  # SC_FOLDACTION_EXPAND
+
     # --- persistence -----------------------------------------------------
     def save(self, path: str | None = None) -> str:
         target = path or self.path
