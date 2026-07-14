@@ -49,6 +49,8 @@ khervepy/
   git_backend.py       git CLI wrapper + GitHub REST API
   git_panel.py         Git/GitHub dock UI
   package_manager.py   venv + pip dialog
+  ai_backend.py        multi-provider AI API (Claude/OpenAI/Mistral/Ollama)
+  ai_chat.py           AI assistant dock (chat, model refresh, key dialog)
   settings.py          QSettings façade
 ```
 

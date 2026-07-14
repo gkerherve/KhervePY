@@ -3,6 +3,24 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.28.0 — 2026-07-14
+
+### Added
+- **AI coding assistant** in a dock tabbed with the Terminal. Chat with a model
+  to write code or check mistakes:
+  - Providers: **Claude (Anthropic)**, **OpenAI**, **Mistral**, and local
+    **Ollama** (no key). Switch freely.
+  - **↻ Models** button refreshes the live model list per provider.
+  - **Keys…** dialog stores API keys in QSettings (never in the repo); **?**
+    explains how to get a key for each provider.
+  - **Attach current file** sends the active editor file for review.
+  - Ctrl+Enter sends; network calls run off the UI thread.
+- Help menu additions: AI Assistant, Get an API key…, AI API Keys…, and a
+  richer **About** dialog (features, links, GPL-3).
+
+### Changed
+- Run menu gains **AI Assistant**.
+
 ## 0.27.1 — 2026-07-13
 
 ### Changed

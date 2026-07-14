@@ -47,6 +47,7 @@ from khervepy.debugger import Debugger
 from khervepy.diff_viewer import DiffViewer
 from khervepy.git_panel import GitPanel
 from khervepy.package_manager import PackageManager
+from khervepy.ai_chat import AIChat
 from khervepy.settings import Settings
 from khervepy.themes import (
     DEFAULT_THEME,
@@ -184,6 +185,16 @@ class MainWindow(QMainWindow):
         self.tabifyDockWidget(out_dock, term_dock)
         term_dock.raise_()
         self.terminal_dock = term_dock
+
+        # AI assistant (bottom, tabbed alongside the Terminal).
+        self.ai_chat = AIChat(self.settings, self._editor_context)
+        self.ai_chat.status_message.connect(self._status)
+        ai_dock = QDockWidget("AI Chat", self)
+        ai_dock.setObjectName("ai_dock")
+        ai_dock.setWidget(self.ai_chat)
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, ai_dock)
+        self.tabifyDockWidget(term_dock, ai_dock)
+        self.ai_dock = ai_dock
 
         # Debugger (bottom, tabbed with Output/Terminal).
         self.debugger = Debugger(self.current_location, self.project_root)
@@ -371,6 +382,7 @@ class MainWindow(QMainWindow):
         view_menu.addAction(self.log_dock.toggleViewAction())
         view_menu.addAction(self.output_dock.toggleViewAction())
         view_menu.addAction(self.terminal_dock.toggleViewAction())
+        view_menu.addAction(self.ai_dock.toggleViewAction())
         view_menu.addAction(self.debugger_dock.toggleViewAction())
         view_menu.addAction(self.diff_dock.toggleViewAction())
 
@@ -387,8 +399,14 @@ class MainWindow(QMainWindow):
         run_menu.addAction("Debug current file", self.debug_current)
         run_menu.addAction("Environments & Packages…", self.open_package_manager)
 
+        run_menu.addAction("AI Assistant", self.focus_ai_chat)
+
         help_menu = bar.addMenu("&Help")
-        help_menu.addAction("About", self.about)
+        help_menu.addAction("AI Assistant", self.focus_ai_chat)
+        help_menu.addAction("Get an API key…", lambda: self.ai_chat.show_help())
+        help_menu.addAction("AI API Keys…", lambda: self.ai_chat.open_keys())
+        help_menu.addSeparator()
+        help_menu.addAction("About KhervePY", self.about)
 
     def _build_statusbar(self) -> None:
         self.statusBar().showMessage(f"{__app_name__} {__version__} — ready")
@@ -530,6 +548,19 @@ class MainWindow(QMainWindow):
         self.terminal_dock.show()
         self.terminal_dock.raise_()
         self.terminal.input.setFocus()
+
+    def focus_ai_chat(self) -> None:
+        self.ai_dock.show()
+        self.ai_dock.raise_()
+        self.ai_chat.input.setFocus()
+
+    def _editor_context(self):
+        """Return ``(filename, text)`` of the current editor for the AI chat."""
+        editor = self.current_editor()
+        if editor is None:
+            return None
+        return (os.path.basename(editor.path) if editor.path else "untitled",
+                editor.text())
 
     def current_location(self) -> tuple[str, int]:
         """Return ``(path, 1-based-line)`` for the caret in the current editor."""
@@ -1087,10 +1118,23 @@ class MainWindow(QMainWindow):
         QMessageBox.about(
             self,
             f"About {__app_name__}",
-            f"<b>{__app_name__}</b> {__version__}<br>"
-            "A lightweight, GitHub-first Python IDE.<br><br>"
-            "Copyright (C) 2026 Gwilherm Kerherve<br>"
-            "Licensed under the GNU GPL v3.",
+            f"<h3>{__app_name__} {__version__}</h3>"
+            "<p>A lightweight, GitHub-first Python IDE — part of the "
+            "<b>KherveTools</b> family.</p>"
+            "<p><b>Features:</b> tabbed QScintilla editor with syntax "
+            "highlighting and themes, project explorer with full file "
+            "operations, integrated Git &amp; GitHub (graph, commit, "
+            "push/pull, branches, clone/fork), run &amp; debug, an integrated "
+            "terminal, package/venv management, uncommitted-change indicators, "
+            "and a multi-provider <b>AI coding assistant</b> "
+            "(Claude, OpenAI, Mistral, Ollama).</p>"
+            "<p>Built with Python + PyQt6 + QScintilla.</p>"
+            "<p>Copyright © 2026 Gwilherm Kerherve<br>"
+            "Licensed under the "
+            "<a href='https://www.gnu.org/licenses/gpl-3.0.html'>GNU GPL v3</a>"
+            " or later.</p>"
+            "<p><a href='https://github.com/gkerherve/KhervePY'>"
+            "github.com/gkerherve/KhervePY</a></p>",
         )
 
     def _rebuild_recent_menu(self) -> None:
@@ -1119,7 +1163,7 @@ class MainWindow(QMainWindow):
         self._central.hide()
         for d in (self.tree_dock, self.search_dock, self.log_dock,
                   self.output_dock, self.terminal_dock, self.debugger_dock,
-                  self.diff_dock, self.git_dock):
+                  self.diff_dock, self.git_dock, self.ai_dock):
             d.hide()
 
         # Left: Terminal.  Right: Log (commit graph + full commit message).
@@ -1228,6 +1272,7 @@ class MainWindow(QMainWindow):
         self._save_open_files()
         self.terminal.stop()
         self.debugger.stop()
+        self.ai_chat.stop()
         for thread in list(self._gh_threads):
             thread.quit()
             thread.wait()

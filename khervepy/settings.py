@@ -78,6 +78,33 @@ class Settings:
     def last_project(self, value: str) -> None:
         self._q.setValue("recent/last_project", value)
 
+    # --- AI assistant ----------------------------------------------------
+    def api_key(self, provider: str) -> str:
+        return self._q.value(f"ai/key/{provider}", "", type=str)
+
+    def set_api_key(self, provider: str, key: str) -> None:
+        self._q.setValue(f"ai/key/{provider}", key)
+
+    @property
+    def ai_provider(self) -> str:
+        return self._q.value("ai/provider", "anthropic", type=str)
+
+    @ai_provider.setter
+    def ai_provider(self, value: str) -> None:
+        self._q.setValue("ai/provider", value)
+
+    def ai_model(self, provider: str) -> str:
+        return self._q.value(f"ai/model/{provider}", "", type=str)
+
+    def set_ai_model(self, provider: str, model: str) -> None:
+        self._q.setValue(f"ai/model/{provider}", model)
+
+    def ai_models(self, provider: str) -> list[str]:
+        return self._q.value(f"ai/models/{provider}", [], type=list) or []
+
+    def set_ai_models(self, provider: str, models: list[str]) -> None:
+        self._q.setValue(f"ai/models/{provider}", list(models))
+
     # --- open editor session ---------------------------------------------
     @property
     def open_files(self) -> list[str]:
