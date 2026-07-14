@@ -187,7 +187,7 @@ class MainWindow(QMainWindow):
         self.terminal_dock = term_dock
 
         # AI assistant (bottom, tabbed alongside the Terminal).
-        self.ai_chat = AIChat(self.settings, self._editor_context)
+        self.ai_chat = AIChat(self.settings, self._editor_context, host=self)
         self.ai_chat.status_message.connect(self._status)
         ai_dock = QDockWidget("AI Chat", self)
         ai_dock.setObjectName("ai_dock")
@@ -561,6 +561,40 @@ class MainWindow(QMainWindow):
             return None
         return (os.path.basename(editor.path) if editor.path else "untitled",
                 editor.text())
+
+    # --- AI agent host interface -----------------------------------------
+    def ai_open_files(self) -> dict:
+        """Map absolute path -> current (possibly unsaved) text for open tabs."""
+        files = {}
+        for i in range(self.tabs.count()):
+            w = self.tabs.widget(i)
+            if isinstance(w, CodeEditor) and w.path:
+                files[os.path.abspath(w.path)] = w.text()
+        return files
+
+    def ai_active_file(self):
+        editor = self.current_editor()
+        return os.path.abspath(editor.path) if editor and editor.path else None
+
+    def ai_after_agent(self, changed_paths: set, committed: bool) -> None:
+        """Reload any open editors the agent wrote, then refresh git views."""
+        for i in range(self.tabs.count()):
+            w = self.tabs.widget(i)
+            if not (isinstance(w, CodeEditor) and w.path):
+                continue
+            if os.path.abspath(w.path) in changed_paths:
+                try:
+                    w.reload_from_disk()
+                except OSError:
+                    pass
+        if changed_paths or committed:
+            self.git_panel.refresh()
+            self.commit_log.refresh()
+            self._schedule_vcs_refresh()
+        if committed:
+            self._status("AI agent committed changes.")
+        elif changed_paths:
+            self._status(f"AI agent edited {len(changed_paths)} file(s).")
 
     def current_location(self) -> tuple[str, int]:
         """Return ``(path, 1-based-line)`` for the caret in the current editor."""

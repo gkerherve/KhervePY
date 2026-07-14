@@ -3,6 +3,19 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.29.0 — 2026-07-14
+
+### Added
+- **AI agent mode** (on by default, toggle in the AI dock): the assistant can
+  now act on your project through tools instead of only chatting —
+  - `get_open_files` — see which files are open and which is active
+  - `read_file` / `write_file` — view and edit project files directly
+  - `git_commit` — stage all changes and commit
+  Each tool action is logged in the transcript; edited files that are open are
+  reloaded automatically and the Git views refresh. Works with Claude, OpenAI,
+  Mistral and Ollama (tool-capable models). Writes are sandboxed to the project
+  folder. Uncheck "Agent" for plain chat.
+
 ## 0.28.1 — 2026-07-14
 
 ### Fixed

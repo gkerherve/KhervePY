@@ -254,6 +254,14 @@ class CodeEditor(QsciScintilla):
     def unfold_all(self) -> None:
         self.SendScintilla(QsciScintilla.SCI_FOLDALL, 1)  # SC_FOLDACTION_EXPAND
 
+    def reload_from_disk(self) -> None:
+        """Reload the buffer from ``self.path`` (e.g. after an external edit)."""
+        if not self.path or not os.path.isfile(self.path):
+            return
+        line, index = self.getCursorPosition()
+        self._load(self.path)
+        self.setCursorPosition(min(line, max(0, self.lines() - 1)), index)
+
     # --- persistence -----------------------------------------------------
     def save(self, path: str | None = None) -> str:
         target = path or self.path

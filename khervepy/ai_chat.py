@@ -17,6 +17,8 @@ the Free Software Foundation, either version 3 of the License, or
 from __future__ import annotations
 
 import html
+import json
+import os
 
 from PyQt6.QtCore import QObject, Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QDesktopServices, QFont, QKeySequence, QShortcut
@@ -39,6 +41,7 @@ from PyQt6.QtWidgets import (
 )
 
 from khervepy import ai_backend as ai
+from khervepy import git_backend as gb
 
 
 class _Worker(QObject):
@@ -111,20 +114,28 @@ class AIKeysDialog(QDialog):
 
 
 class AIChat(QWidget):
-    """Provider-agnostic coding chat with a model picker and refresh."""
+    """Provider-agnostic coding chat/agent with a model picker and refresh."""
 
     status_message = pyqtSignal(str)
+    tool_used = pyqtSignal(str)  # marshals a tool-action log to the GUI thread
 
-    def __init__(self, settings, context_getter=None, parent=None):
+    def __init__(self, settings, context_getter=None, host=None, parent=None):
         super().__init__(parent)
         self.settings = settings
         # context_getter() -> (filename, text) for the current editor, or None
         self._context_getter = context_getter
+        # host provides project access for agent tools (the MainWindow)
+        self._host = host
         self._history: list[dict] = []
         self._threads: list[QThread] = []
         self._jobs: dict[int, tuple] = {}
         self._gen = 0
         self._busy = False
+        # Agent-turn scratch state.
+        self._tool_ctx: dict = {}
+        self._changed: set[str] = set()
+        self._committed = False
+        self.tool_used.connect(self._system_line)
 
         self._build_ui()
         self._load_provider(self.settings.ai_provider)
@@ -170,11 +181,21 @@ class AIChat(QWidget):
         layout.addWidget(self.view, 1)
 
         # Input row.
+        opts = QHBoxLayout()
+        self.agent_cb = QCheckBox("Agent (edit files & commit)")
+        self.agent_cb.setChecked(True)
+        self.agent_cb.setToolTip(
+            "Let the assistant read/write your project files and commit, using "
+            "tools. Uncheck for plain chat."
+        )
+        opts.addWidget(self.agent_cb)
         self.context_cb = QCheckBox("Attach current file")
         self.context_cb.setToolTip(
-            "Send the active editor file so the assistant can review it"
+            "Also paste the active editor file into the message"
         )
-        layout.addWidget(self.context_cb)
+        opts.addWidget(self.context_cb)
+        opts.addStretch(1)
+        layout.addLayout(opts)
 
         bottom = QHBoxLayout()
         self.input = QPlainTextEdit()
@@ -299,16 +320,110 @@ class AIChat(QWidget):
             f"{ai.PROVIDERS[provider]['label']} ({model}) is thinking…")
 
         messages = list(self._history)
-        self._run(
-            lambda: ai.chat(provider, key, model, messages),
-            self._reply,
-            self._chat_failed,
-        )
+        agent = self.agent_cb.isChecked() and self._host is not None
+        if agent:
+            self._begin_agent_turn()
+            self._run(
+                lambda: ai.run_agent(provider, key, model, messages,
+                                     self._tool_run, self._tool_log),
+                self._reply,
+                self._chat_failed,
+            )
+        else:
+            self._run(
+                lambda: ai.chat(provider, key, model, messages),
+                self._reply,
+                self._chat_failed,
+            )
 
     def _reply(self, text: str) -> None:
         self._history.append({"role": "assistant", "content": text})
         self._append("assistant", text)
+        self._apply_agent_changes()
         self._set_busy(False)
+
+    # --- agent tools -----------------------------------------------------
+    def _begin_agent_turn(self) -> None:
+        """Snapshot the project state the tools may read (on the GUI thread)."""
+        self._changed = set()
+        self._committed = False
+        open_files, active = {}, None
+        if self._host is not None:
+            open_files = self._host.ai_open_files()
+            active = self._host.ai_active_file()
+        self._tool_ctx = {
+            "root": getattr(self._host, "project_root", os.getcwd()),
+            "open": open_files,
+            "active": active,
+        }
+
+    def _resolve(self, root: str, rel: str):
+        """Resolve ``rel`` under ``root``; None if it escapes the project."""
+        root_abs = os.path.abspath(root)
+        p = os.path.abspath(os.path.join(root_abs, rel or ""))
+        if p == root_abs or p.startswith(root_abs + os.sep):
+            return p
+        return None
+
+    def _tool_run(self, name: str, args: dict) -> str:
+        """Execute a tool (runs on the worker thread — disk/git only)."""
+        ctx = self._tool_ctx
+        root = ctx.get("root", os.getcwd())
+        try:
+            if name == "get_open_files":
+                return json.dumps({
+                    "open": [os.path.relpath(p, root) for p in ctx["open"]],
+                    "active": (os.path.relpath(ctx["active"], root)
+                               if ctx.get("active") else None),
+                })
+            if name == "read_file":
+                p = self._resolve(root, args.get("path", ""))
+                if p is None:
+                    return "Error: path is outside the project."
+                if p in ctx["open"]:
+                    return ctx["open"][p]  # unsaved buffer contents
+                if os.path.isfile(p):
+                    with open(p, encoding="utf-8", errors="replace") as fh:
+                        return fh.read()
+                return "Error: file not found."
+            if name == "write_file":
+                p = self._resolve(root, args.get("path", ""))
+                if p is None:
+                    return "Error: path is outside the project."
+                os.makedirs(os.path.dirname(p) or root, exist_ok=True)
+                with open(p, "w", encoding="utf-8", newline="\n") as fh:
+                    fh.write(args.get("content", ""))
+                self._changed.add(p)
+                return f"Wrote {os.path.relpath(p, root)}."
+            if name == "git_commit":
+                if not gb.is_repo(root):
+                    return "Error: not a git repository."
+                msg = (args.get("message") or "").strip() or "Update"
+                gb.stage_all(root)
+                gb.commit(root, msg)
+                self._committed = True
+                return f"Committed: {msg}"
+        except Exception as exc:  # noqa: BLE001 — reported back to the model
+            return f"Error: {exc}"
+        return f"Unknown tool: {name}"
+
+    def _tool_log(self, name: str, args: dict, result: str) -> None:
+        detail = ""
+        if name in ("read_file", "write_file"):
+            detail = args.get("path", "")
+        elif name == "git_commit":
+            detail = args.get("message", "")
+        first = (result or "").splitlines()[0] if result else ""
+        self.tool_used.emit(f"→ {name}({detail}) — {first[:80]}")
+
+    def _apply_agent_changes(self) -> None:
+        """After an agent turn, reload touched editors and refresh git."""
+        if self._host is None:
+            return
+        if self._changed or self._committed:
+            self._host.ai_after_agent(set(self._changed), self._committed)
+        self._changed = set()
+        self._committed = False
 
     def _chat_failed(self, msg: str) -> None:
         # Drop the unanswered user turn so a retry doesn't stack context.
