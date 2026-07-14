@@ -44,6 +44,14 @@ class Settings:
     def font_size(self, value: int) -> None:
         self._q.setValue("editor/font_size", int(value))
 
+    @property
+    def menubar_visible(self) -> bool:
+        return self._q.value("window/menubar_visible", True, type=bool)
+
+    @menubar_visible.setter
+    def menubar_visible(self, value: bool) -> None:
+        self._q.setValue("window/menubar_visible", bool(value))
+
     # --- GitHub ----------------------------------------------------------
     @property
     def github_token(self) -> str:

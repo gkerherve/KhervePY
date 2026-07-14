@@ -3,6 +3,17 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.30.0 — 2026-07-14
+
+### Added
+- **Hideable menu bar**: View → Menu Bar (or **Ctrl+M**) toggles it; the state
+  is remembered, and Ctrl+M still works while it is hidden.
+
+### Fixed
+- The **Project tree** now follows the editor theme properly (its palette is
+  themed, not just the stylesheet), so it no longer shows a light background
+  under dark themes.
+
 ## 0.29.0 — 2026-07-14
 
 ### Added

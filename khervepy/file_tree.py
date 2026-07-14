@@ -16,7 +16,13 @@ import subprocess
 import sys
 
 from PyQt6.QtCore import QDir, QMimeData, Qt, QUrl, pyqtSignal
-from PyQt6.QtGui import QAction, QColor, QFileSystemModel, QKeySequence
+from PyQt6.QtGui import (
+    QAction,
+    QColor,
+    QFileSystemModel,
+    QKeySequence,
+    QPalette,
+)
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -136,6 +142,25 @@ class FileTree(QTreeView):
         """Recolour filenames from a ``path -> git-status`` mapping."""
         self._model.set_status_map(mapping)
         self.viewport().update()
+
+    def apply_theme(self, theme) -> None:
+        """Match the file list to the editor theme (palette, not just CSS)."""
+        bg = QColor(theme.background)
+        fg = QColor(theme.foreground)
+        alt = QColor(theme.caret_line)
+        sel = QColor(theme.selection_bg)
+        sel_fg = QColor(theme.selection_fg)
+        pal = self.palette()
+        for group in (QPalette.ColorGroup.Active, QPalette.ColorGroup.Inactive):
+            pal.setColor(group, QPalette.ColorRole.Base, bg)
+            pal.setColor(group, QPalette.ColorRole.AlternateBase, alt)
+            pal.setColor(group, QPalette.ColorRole.Text, fg)
+            pal.setColor(group, QPalette.ColorRole.Window, bg)
+            pal.setColor(group, QPalette.ColorRole.WindowText, fg)
+            pal.setColor(group, QPalette.ColorRole.Highlight, sel)
+            pal.setColor(group, QPalette.ColorRole.HighlightedText, sel_fg)
+        self.setPalette(pal)
+        self.viewport().setPalette(pal)
 
     def _on_double_click(self, index) -> None:
         path = self._model.filePath(index)

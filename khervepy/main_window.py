@@ -383,6 +383,17 @@ class MainWindow(QMainWindow):
         view_menu.addAction(self.output_dock.toggleViewAction())
         view_menu.addAction(self.terminal_dock.toggleViewAction())
         view_menu.addAction(self.ai_dock.toggleViewAction())
+        view_menu.addSeparator()
+        self.menubar_action = QAction("Menu Bar", self, checkable=True)
+        self.menubar_action.setChecked(True)
+        self.menubar_action.setShortcut(QKeySequence("Ctrl+M"))
+        self.menubar_action.setToolTip("Show/hide the menu bar (Ctrl+M)")
+        self.menubar_action.toggled.connect(self._toggle_menubar)
+        view_menu.addAction(self.menubar_action)
+        # Also a window-level action so Ctrl+M works while the bar is hidden.
+        self.addAction(self.menubar_action)
+        # Apply the saved preference.
+        self.menubar_action.setChecked(self.settings.menubar_visible)
         view_menu.addAction(self.debugger_dock.toggleViewAction())
         view_menu.addAction(self.diff_dock.toggleViewAction())
 
@@ -407,6 +418,12 @@ class MainWindow(QMainWindow):
         help_menu.addAction("AI API Keys…", lambda: self.ai_chat.open_keys())
         help_menu.addSeparator()
         help_menu.addAction("About KhervePY", self.about)
+
+    def _toggle_menubar(self, visible: bool) -> None:
+        self.menuBar().setVisible(visible)
+        self.settings.menubar_visible = visible
+        if not visible:
+            self._status("Menu bar hidden — press Ctrl+M to show it again.")
 
     def _build_statusbar(self) -> None:
         self.statusBar().showMessage(f"{__app_name__} {__version__} — ready")
@@ -1145,6 +1162,9 @@ class MainWindow(QMainWindow):
             act.setIcon(icons.icon(glyph, color))
         if hasattr(self, "branch_widget"):
             self.branch_widget.setIcon(icons.icon("branch", color))
+        # The project tree needs its palette themed, not just the stylesheet.
+        if hasattr(self, "tree"):
+            self.tree.apply_theme(theme)
         # Run/Stop carry status colours that must survive a theme recolour.
         self._update_run_icons()
 
