@@ -15,22 +15,46 @@ import shutil
 import subprocess
 import sys
 
-from PyQt6.QtCore import QDir, QMimeData, Qt, QUrl, pyqtSignal
+from PyQt6.QtCore import QDir, QFileInfo, QMimeData, Qt, QUrl, pyqtSignal
 from PyQt6.QtGui import (
     QAction,
     QColor,
     QFileSystemModel,
+    QIcon,
     QKeySequence,
     QPalette,
 )
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
+    QFileIconProvider,
     QInputDialog,
     QMenu,
     QMessageBox,
     QTreeView,
 )
+
+from khervepy import icons as _icons
+
+
+class _ThemedIconProvider(QFileIconProvider):
+    """Draw folder/file icons in the theme's colours (no yellow OS folders)."""
+
+    def __init__(self):
+        super().__init__()
+        self._folder = _icons.icon("folder", QColor("#8B949E"))
+        self._file = _icons.icon("file", QColor("#8B949E"))
+
+    def set_theme(self, theme) -> None:
+        self._folder = _icons.icon("folder", QColor(theme.foreground))
+        self._file = _icons.icon("file", QColor(theme.margin_fg))
+
+    def icon(self, arg):  # type: ignore[override]
+        if isinstance(arg, QFileInfo):
+            return self._folder if arg.isDir() else self._file
+        if arg == QFileIconProvider.IconType.Folder:
+            return self._folder
+        return self._file
 
 # Git-status → filename colour. Added/untracked green, modified blue,
 # deleted red, conflicted amber.
@@ -93,6 +117,8 @@ class FileTree(QTreeView):
         )
         self._model.setNameFilterDisables(False)
         self._model.setReadOnly(False)  # allow rename + drag-move on disk
+        self._icon_provider = _ThemedIconProvider()
+        self._model.setIconProvider(self._icon_provider)
         self.setModel(self._model)
 
         # Show only the name column.
@@ -161,6 +187,9 @@ class FileTree(QTreeView):
             pal.setColor(group, QPalette.ColorRole.HighlightedText, sel_fg)
         self.setPalette(pal)
         self.viewport().setPalette(pal)
+        # Re-colour the folder/file icons and force the model to re-fetch them.
+        self._icon_provider.set_theme(theme)
+        self._model.setIconProvider(self._icon_provider)
 
     def _on_double_click(self, index) -> None:
         path = self._model.filePath(index)

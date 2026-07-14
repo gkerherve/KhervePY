@@ -3,6 +3,15 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.30.1 — 2026-07-14
+
+### Fixed
+- **Windows encoding crash**: child-process output (git/pip) is now decoded as
+  UTF-8 with `errors="replace"`, fixing `UnicodeDecodeError` reader-thread
+  tracebacks (cp1252 could not decode bytes like `0x81`).
+- **Yellow folder icons**: the Project tree now uses themed monochrome
+  folder/file icons instead of the OS's yellow folders, matching the theme.
+
 ## 0.30.0 — 2026-07-14
 
 ### Added

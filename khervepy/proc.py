@@ -31,12 +31,23 @@ _CREATE_NO_WINDOW = 0x08000000  # Windows process-creation flag
 
 
 def subprocess_flags() -> dict:
-    """Keyword args for ``subprocess.run`` that suppress a console window."""
-    if not _IS_WINDOWS:
-        return {}
-    startupinfo = subprocess.STARTUPINFO()
-    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-    return {"creationflags": _CREATE_NO_WINDOW, "startupinfo": startupinfo}
+    """Keyword args for ``subprocess.run`` used across KhervePY.
+
+    Two concerns, both bundled so every call gets them:
+
+    * **UTF-8 decoding.** ``text=True`` alone decodes child output with the
+      locale codec (cp1252 on Windows), which crashes on bytes like ``0x81`` in
+      git/pip output. Force UTF-8 with ``errors="replace"`` instead.
+    * **No console window.** On Windows, ``CREATE_NO_WINDOW`` stops child
+      console programs from flashing a window in the frozen (windowed) build.
+    """
+    flags: dict = {"encoding": "utf-8", "errors": "replace"}
+    if _IS_WINDOWS:
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        flags["creationflags"] = _CREATE_NO_WINDOW
+        flags["startupinfo"] = startupinfo
+    return flags
 
 
 def hide_console(proc) -> None:
