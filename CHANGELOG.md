@@ -3,6 +3,17 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.28.1 — 2026-07-14
+
+### Fixed
+- AI chat never responded: worker completions were running on the worker
+  thread and deadlocking on `thread.wait()`, so replies never rendered.
+  Completions are now dispatched to the GUI thread.
+
+### Added
+- **Stop** button in the AI chat to cancel an in-flight request (its result is
+  discarded), plus a "…is thinking…" indicator while waiting.
+
 ## 0.28.0 — 2026-07-14
 
 ### Added

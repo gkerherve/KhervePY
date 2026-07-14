@@ -122,6 +122,8 @@ class AIChat(QWidget):
         self._context_getter = context_getter
         self._history: list[dict] = []
         self._threads: list[QThread] = []
+        self._jobs: dict[int, tuple] = {}
+        self._gen = 0
         self._busy = False
 
         self._build_ui()
@@ -186,6 +188,11 @@ class AIChat(QWidget):
         self.send_btn = QPushButton("Send")
         self.send_btn.clicked.connect(self._send)
         bottom.addWidget(self.send_btn)
+        self.stop_btn = QPushButton("Stop")
+        self.stop_btn.setEnabled(False)
+        self.stop_btn.setToolTip("Cancel the current request")
+        self.stop_btn.clicked.connect(self._stop)
+        bottom.addWidget(self.stop_btn)
         layout.addLayout(bottom)
 
         for seq in ("Ctrl+Return", "Ctrl+Enter"):
@@ -288,6 +295,8 @@ class AIChat(QWidget):
         self.input.clear()
         self.settings.set_ai_model(provider, model)
         self._set_busy(True)
+        self._system_line(
+            f"{ai.PROVIDERS[provider]['label']} ({model}) is thinking…")
 
         messages = list(self._history)
         self._run(
@@ -314,41 +323,65 @@ class AIChat(QWidget):
         self._system_line("Conversation cleared.")
 
     # --- worker plumbing -------------------------------------------------
+    # Completions are dispatched through self-bound slots so they run on the
+    # GUI thread (a plain closure would run on the worker thread and deadlock
+    # on thread.wait()). Each job carries a generation so Stop can discard the
+    # result of an in-flight request.
     def _run(self, fn, on_done, on_fail) -> None:
-        thread = QThread(self)
+        thread = QThread()
         worker = _Worker(fn)
         worker.moveToThread(thread)
+        self._jobs[id(worker)] = (thread, worker, on_done, on_fail, self._gen)
         thread.started.connect(worker.run)
+        worker.done.connect(self._job_done)
+        worker.failed.connect(self._job_failed)
+        self._threads.append(thread)
+        thread.start()
 
-        def cleanup():
+    def _finish_job(self, worker):
+        job = self._jobs.pop(id(worker), None)
+        if job is not None:
+            thread = job[0]
             thread.quit()
             thread.wait()
             if thread in self._threads:
                 self._threads.remove(thread)
+        return job
 
-        def done(result):
-            on_done(result)
-            cleanup()
+    def _job_done(self, result) -> None:
+        job = self._finish_job(self.sender())
+        if job is not None and job[4] == self._gen:
+            job[2](result)  # on_done
 
-        def fail(msg):
-            on_fail(msg)
-            cleanup()
+    def _job_failed(self, msg) -> None:
+        job = self._finish_job(self.sender())
+        if job is not None and job[4] == self._gen:
+            job[3](msg)  # on_fail
 
-        worker.done.connect(done)
-        worker.failed.connect(fail)
-        self._threads.append(thread)
-        thread.start()
+    def _stop(self) -> None:
+        """Cancel the in-flight request; its result will be discarded."""
+        if not self._busy and self.refresh_btn.isEnabled():
+            return
+        self._gen += 1
+        self._set_busy(False)
+        self.refresh_btn.setEnabled(True)
+        self._system_line("Request cancelled.")
 
     def stop(self) -> None:
+        self._gen += 1
         for thread in list(self._threads):
             thread.quit()
             thread.wait()
+        self._threads.clear()
+        self._jobs.clear()
 
     # --- rendering -------------------------------------------------------
     def _set_busy(self, busy: bool) -> None:
         self._busy = busy
         self.send_btn.setEnabled(not busy)
         self.send_btn.setText("…" if busy else "Send")
+        self.stop_btn.setEnabled(busy)
+        self.input.setReadOnly(busy)
 
     def _append(self, role: str, text: str) -> None:
         who = "You" if role == "user" else ai.PROVIDERS[self._provider()]["label"]
