@@ -102,7 +102,15 @@ class Terminal(QWidget):
         row.addWidget(self.prompt)
         self.input = _CommandLine(self.send_command)
         self.input.setFont(mono)
+        self.input.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         row.addWidget(self.input, 1)
+
+        # The output view is read-only, so clicking it would otherwise swallow
+        # focus and typing would go nowhere. Route focus (and therefore keys)
+        # to the command line, from both the view and the dock itself, while
+        # leaving the view's mouse handling intact for selecting text.
+        self.view.setFocusProxy(self.input)
+        self.setFocusProxy(self.input)
         clear_btn = QPushButton("Clear")
         clear_btn.clicked.connect(self.view.clear)
         restart_btn = QPushButton("Restart")

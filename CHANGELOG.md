@@ -3,6 +3,20 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.30.2 — 2026-07-16
+
+### Fixed
+- **Terminal would not accept typing**: clicking the (read-only) output view
+  took focus and swallowed keystrokes. The view and the dock now proxy focus to
+  the command line, so typing anywhere in the Terminal reaches the shell.
+- **Icon rendered as tofu boxes**: `make_icon.py` forced Qt's `offscreen`
+  platform, which has no font database on Windows, and asked for a
+  comma-separated font list Qt cannot resolve as a family name.
+
+### Changed
+- **Application icon** is now a three-tone **KPy** wordmark (Kherve white +
+  Python blue/yellow) instead of "Py".
+
 ## 0.30.1 — 2026-07-14
 
 ### Fixed

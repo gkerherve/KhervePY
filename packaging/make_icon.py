@@ -1,7 +1,7 @@
 """Generate the KhervePY application icon (PNG + ICO).
 
 Draws the KherveTools house style: a rounded editor tile with a faint code grid
-and a two-tone "Py" wordmark. Run headless:
+and a three-tone "KPy" wordmark. Run headless:
 
     python packaging/make_icon.py
 
@@ -18,7 +18,11 @@ from __future__ import annotations
 import os
 import sys
 
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+# The offscreen platform ships no font database on Windows, so text would draw
+# as tofu boxes. Painting to a QPixmap needs no window, so use the native
+# platform there and keep offscreen for headless Linux/CI.
+if os.name != "nt":
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtCore import QRectF, Qt
 from PyQt6.QtGui import (
@@ -33,6 +37,17 @@ from PyQt6.QtGui import (
 from PyQt6.QtWidgets import QApplication
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def _sans_family() -> str:
+    """Return the first installed sans-serif family from our preference list."""
+    from PyQt6.QtGui import QFontDatabase
+
+    available = set(QFontDatabase.families())
+    for name in ("Segoe UI", "Arial", "DejaVu Sans", "Helvetica"):
+        if name in available:
+            return name
+    return "sans-serif"
 
 
 def render(size: int = 256) -> QPixmap:
@@ -64,23 +79,25 @@ def render(size: int = 256) -> QPixmap:
         y += step
     p.setClipping(False)
 
-    # Two-tone "Py" wordmark (Python blue + yellow).
-    font = QFont("DejaVu Sans, Arial, sans-serif")
-    font.setPixelSize(int(size * 0.5))
+    # "KPy" wordmark: Kherve white K, then Python blue + yellow.
+    # A comma-separated list is *not* a family name to Qt — it would resolve to
+    # nothing and draw tofu boxes. Ask for one family and let the style hint
+    # pick the platform's sans-serif if it is missing.
+    font = QFont(_sans_family())
+    font.setStyleHint(QFont.StyleHint.SansSerif)
+    font.setPixelSize(int(size * 0.42))
     font.setBold(True)
     p.setFont(font)
     metrics = p.fontMetrics()
-    text_p, text_y = "P", "y"
-    w_p = metrics.horizontalAdvance(text_p)
-    w_y = metrics.horizontalAdvance(text_y)
-    total = w_p + w_y
+    parts = [("K", QColor("#E8E8E8")), ("P", QColor("#4B8BBE")), ("y", QColor("#FFD43B"))]
+    total = sum(metrics.horizontalAdvance(t) for t, _ in parts)
     x = (size - total) / 2
     baseline = size / 2 + metrics.ascent() / 2 - metrics.descent() / 2
 
-    p.setPen(QColor("#4B8BBE"))
-    p.drawText(int(x), int(baseline), text_p)
-    p.setPen(QColor("#FFD43B"))
-    p.drawText(int(x + w_p), int(baseline), text_y)
+    for text, colour in parts:
+        p.setPen(colour)
+        p.drawText(int(x), int(baseline), text)
+        x += metrics.horizontalAdvance(text)
 
     p.end()
     return pix
