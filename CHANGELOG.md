@@ -3,6 +3,21 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.31.0 — 2026-07-16
+
+### Changed
+- **Type directly in the Terminal**: the separate "Type a command" box is gone.
+  The console view is now editable in place, like a real terminal — commands are
+  typed on the shell's own prompt line. Scrollback is protected: editing keys
+  only act after the shell's last output, and clicking into the history then
+  typing returns you to the input zone. Up/Down still recall history.
+- **No duplicated commands**: the shell echoes back whatever it reads from the
+  pipe, which doubled the text already on screen. The first echoed copy is now
+  dropped, so a session reads like a native shell.
+- **Sharp icons at every size**: `khervepy.ico` now carries a native render at
+  16/24/32/48/64/128/256px instead of one 256px image for Windows to downscale
+  (and is 23 KB rather than 270 KB).
+
 ## 0.30.2 — 2026-07-16
 
 ### Fixed

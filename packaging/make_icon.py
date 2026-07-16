@@ -16,6 +16,7 @@ the Free Software Foundation, either version 3 of the License, or
 from __future__ import annotations
 
 import os
+import struct
 import sys
 
 # The offscreen platform ships no font database on Windows, so text would draw
@@ -37,6 +38,9 @@ from PyQt6.QtGui import (
 from PyQt6.QtWidgets import QApplication
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+
+# Sizes Windows picks between for the taskbar, Explorer and Alt-Tab.
+ICO_SIZES = (16, 24, 32, 48, 64, 128, 256)
 
 
 def _sans_family() -> str:
@@ -103,6 +107,39 @@ def render(size: int = 256) -> QPixmap:
     return pix
 
 
+def _write_multi_ico(path: str, sizes) -> None:
+    """Write a multi-resolution .ico containing a native render per size.
+
+    Qt's ICO writer only ever stores a single image, so assemble the container
+    by hand. Each entry holds a PNG payload, which Windows has read since
+    Vista and which keeps the file small at 256px.
+    """
+    from PyQt6.QtCore import QBuffer, QByteArray
+
+    payloads = []
+    for size in sizes:
+        # Bind the QByteArray to a name: QBuffer only borrows it, and letting
+        # the temporary be collected crashes the interpreter.
+        store = QByteArray()
+        buf = QBuffer(store)
+        buf.open(QBuffer.OpenModeFlag.WriteOnly)
+        render(size).save(buf, "PNG")
+        buf.close()
+        payloads.append((size, bytes(store)))
+
+    header = struct.pack("<HHH", 0, 1, len(payloads))  # reserved, type=icon, count
+    offset = len(header) + 16 * len(payloads)
+    entries, blobs = b"", b""
+    for size, data in payloads:
+        byte = 0 if size >= 256 else size  # 256 is encoded as 0
+        entries += struct.pack("<BBBBHHII", byte, byte, 0, 0, 1, 32,
+                               len(data), offset)
+        blobs += data
+        offset += len(data)
+    with open(path, "wb") as fh:
+        fh.write(header + entries + blobs)
+
+
 def main() -> int:
     app = QApplication(sys.argv)  # noqa: F841 (QPainter needs a QApplication)
     png = os.path.join(HERE, "khervepy.png")
@@ -111,10 +148,12 @@ def main() -> int:
     if not big.save(png, "PNG"):
         print("failed to write PNG")
         return 1
-    if not big.save(ico, "ICO"):
-        print("failed to write ICO")
-        return 1
-    print(f"wrote {png} and {ico}")
+
+    # Draw each ICO size natively rather than saving one 256px image and
+    # letting Windows downscale it — the wordmark stays legible at 16/32px,
+    # where the taskbar and Explorer actually show it.
+    _write_multi_ico(ico, ICO_SIZES)
+    print(f"wrote {png} and {ico} ({', '.join(str(s) for s in ICO_SIZES)}px)")
     return 0
 
 

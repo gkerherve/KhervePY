@@ -564,7 +564,7 @@ class MainWindow(QMainWindow):
     def focus_terminal(self) -> None:
         self.terminal_dock.show()
         self.terminal_dock.raise_()
-        self.terminal.input.setFocus()
+        self.terminal.view.setFocus()
 
     def focus_ai_chat(self) -> None:
         self.ai_dock.show()
