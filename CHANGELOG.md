@@ -3,6 +3,15 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.32.0 — 2026-07-17
+
+### Added
+- **File menu entries**: **New Instance** launches a second KhervePY window as a
+  separate process; **New Python File…** creates an empty `.py` file on disk
+  (UTF-8, `\n` line endings) and opens it in a tab; **Open File Location** reveals
+  the current file in the OS file browser (Explorer `/select`, Finder `-R`, or
+  `xdg-open`), falling back to the project root when no file is focused.
+
 ## 0.31.0 — 2026-07-16
 
 ### Changed

@@ -330,11 +330,16 @@ class MainWindow(QMainWindow):
         bar = self.menuBar()
 
         file_menu = bar.addMenu("&File")
+        file_menu.addAction("New Instance", self.new_instance)
+        file_menu.addSeparator()
         file_menu.addAction("Open Folder…", self.open_folder_dialog)
         file_menu.addAction("Open File…", self.open_file_dialog)
         file_menu.addAction("New", self.new_file)
+        file_menu.addAction("New Python File…", self.new_python_file)
         file_menu.addAction("Save", self.save_current)
         file_menu.addAction("Save As…", self.save_current_as)
+        file_menu.addSeparator()
+        file_menu.addAction("Open File Location", self.open_file_location)
         file_menu.addSeparator()
         self.recent_menu = file_menu.addMenu("Recent Projects")
         self._rebuild_recent_menu()
@@ -642,6 +647,66 @@ class MainWindow(QMainWindow):
         editor.textChanged.connect(self._schedule_vcs_refresh)
         index = self.tabs.addTab(editor, "untitled")
         self.tabs.setCurrentIndex(index)
+
+    def new_python_file(self) -> None:
+        """Create a new empty ``.py`` file on disk and open it in a tab."""
+        path, _ = QFileDialog.getSaveFileName(
+            self, "New Python file",
+            os.path.join(self.project_root or "", "untitled.py"),
+            "Python files (*.py)",
+        )
+        if not path:
+            return
+        if not os.path.splitext(path)[1]:
+            path += ".py"
+        try:
+            if not os.path.exists(path):
+                with open(path, "w", encoding="utf-8", newline="\n") as fh:
+                    fh.write("")
+        except OSError as exc:
+            QMessageBox.warning(self, "New file failed", str(exc))
+            return
+        self.open_path(path)
+
+    def new_instance(self) -> None:
+        """Launch a separate KhervePY process."""
+        from PyQt6.QtCore import QProcess
+
+        import sys
+
+        if getattr(sys, "frozen", False):
+            # Packaged executable: re-run it with the same arguments.
+            QProcess.startDetached(sys.executable, sys.argv[1:])
+        else:
+            QProcess.startDetached(sys.executable, ["-m", "khervepy"])
+
+    def open_file_location(self) -> None:
+        """Reveal the current file (or project root) in the OS file browser."""
+        import subprocess
+        import sys
+
+        editor = self.current_editor()
+        target = editor.path if editor and editor.path else self.project_root
+        if not target or not os.path.exists(target):
+            self._status("No file location to open.")
+            return
+        target = os.path.abspath(target)
+        try:
+            if sys.platform.startswith("win"):
+                if os.path.isdir(target):
+                    os.startfile(target)  # type: ignore[attr-defined]
+                else:
+                    subprocess.run(["explorer", "/select,", target])
+            elif sys.platform == "darwin":
+                if os.path.isdir(target):
+                    subprocess.run(["open", target])
+                else:
+                    subprocess.run(["open", "-R", target])
+            else:
+                folder = target if os.path.isdir(target) else os.path.dirname(target)
+                subprocess.run(["xdg-open", folder])
+        except OSError as exc:
+            QMessageBox.warning(self, "Open location failed", str(exc))
 
     def open_folder_dialog(self) -> None:
         path = QFileDialog.getExistingDirectory(self, "Open folder", self.project_root)
