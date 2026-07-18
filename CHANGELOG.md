@@ -3,6 +3,20 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.33.0 — 2026-07-18
+
+### Added
+- **Check requirements.txt**: a new **Run ▸ Check requirements.txt…** action
+  parses the project's `requirements.txt`, compares it against the interpreter
+  that would run the code, and lists any packages that are **not installed** —
+  with a one-click **Install missing** button that pip-installs them (with their
+  version constraints) into that interpreter. Opening a project now also does a
+  quiet background check and flags any missing requirements in the status bar.
+  This catches dependencies that *degrade silently* (e.g. a toolbar whose icons
+  fall back to text when `qtawesome` is absent) and so never trigger the
+  existing crash-time missing-module handler. New headless-safe
+  `khervepy/requirements.py` holds the parsing/comparison logic.
+
 ## 0.32.0 — 2026-07-17
 
 ### Added

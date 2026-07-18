@@ -414,6 +414,7 @@ class MainWindow(QMainWindow):
         run_menu.addAction("Run current file", self.run_current)
         run_menu.addAction("Debug current file", self.debug_current)
         run_menu.addAction("Environments & Packages…", self.open_package_manager)
+        run_menu.addAction("Check requirements.txt…", self.check_requirements)
 
         run_menu.addAction("AI Assistant", self.focus_ai_chat)
 
@@ -503,6 +504,7 @@ class MainWindow(QMainWindow):
             self.branch_widget.refresh()
         self._schedule_vcs_refresh()
         self.setWindowTitle(f"{__app_name__} {__version__} — {os.path.basename(path) or path}")
+        self._auto_check_requirements()
 
     def _is_in_project(self, path: str) -> bool:
         """True if ``path`` lives inside the current project root."""
@@ -1089,6 +1091,166 @@ class MainWindow(QMainWindow):
             )
             if answer == QMessageBox.StandardButton.Yes:
                 self._run_python_file(path)
+
+    # --- requirements ----------------------------------------------------
+    def check_requirements(self) -> None:
+        """Compare the project's requirements.txt against the interpreter and
+        report which packages are missing, offering to install them."""
+        from PyQt6.QtWidgets import QApplication
+        from khervepy import requirements as reqmod
+        from khervepy.proc import python_executable
+
+        path = reqmod.find_requirements_file(self.project_root)
+        if not path:
+            QMessageBox.information(
+                self, "No requirements.txt",
+                "This project has no requirements.txt in its root folder.",
+            )
+            return
+        python = python_executable(self.project_root)
+        if not python:
+            self._no_python_message()
+            return
+
+        self._status("Checking requirements…")
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        thread = QThread(self)
+        worker = _Worker(lambda: reqmod.check_requirements(path, python))
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+
+        def cleanup():
+            QApplication.restoreOverrideCursor()
+            thread.quit()
+            thread.wait()
+            if thread in self._gh_threads:
+                self._gh_threads.remove(thread)
+
+        def done(result):
+            cleanup()
+            self._show_requirements_result(result)
+
+        def fail(msg):
+            cleanup()
+            self._status("Requirements check failed.")
+            QMessageBox.warning(self, "Requirements check failed", msg)
+
+        worker.done.connect(done)
+        worker.failed.connect(fail)
+        self._gh_threads.append(thread)
+        thread.start()
+
+    def _show_requirements_result(self, result) -> None:
+        total = len(result.requirements)
+        missing = result.missing
+        if not total:
+            self._status("requirements.txt lists no packages.")
+            QMessageBox.information(
+                self, "Requirements", "requirements.txt lists no packages.",
+            )
+            return
+        if not missing:
+            self._status(f"All {total} requirements are installed.")
+            QMessageBox.information(
+                self, "Requirements",
+                f"All {total} requirement(s) are installed. ✔",
+            )
+            return
+
+        names = "<br>".join(f"• <b>{r.name}</b>{r.specifier}" for r in missing)
+        self._status(f"{len(missing)} of {total} requirements missing.")
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("Missing requirements")
+        box.setTextFormat(Qt.TextFormat.RichText)
+        box.setText(
+            f"{len(missing)} of {total} requirement(s) are not installed in "
+            "the interpreter:<br><br>" + names
+        )
+        install_btn = box.addButton("Install missing", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton("Close", QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        if box.clickedButton() is install_btn:
+            self._pip_install_specs([r.raw for r in missing])
+
+    def _pip_install_specs(self, specs: list[str]) -> None:
+        """pip-install the given requirement specifiers into the interpreter,
+        streaming progress into the Output panel."""
+        from PyQt6.QtCore import QProcess
+        from khervepy.proc import hide_console, python_executable
+
+        if not specs:
+            return
+        python = python_executable(self.project_root)
+        if not python:
+            self._no_python_message()
+            return
+        self.output_dock.show()
+        self.output_dock.raise_()
+        self.output.appendPlainText(
+            f"\n$ {python} -m pip install {' '.join(specs)}\n"
+        )
+        self._status("Installing missing requirements…")
+
+        proc = QProcess(self)
+        hide_console(proc)
+        proc.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        proc.setWorkingDirectory(self.project_root)
+        proc.readyReadStandardOutput.connect(
+            lambda: self.output.insertPlainText(
+                bytes(proc.readAllStandardOutput()).decode(errors="replace")
+            )
+        )
+        proc.finished.connect(lambda c, _s: self._on_requirements_installed(c))
+        proc.start(python, ["-m", "pip", "install", *specs])
+        self._pip_proc = proc  # keep a reference
+
+    def _on_requirements_installed(self, code: int) -> None:
+        if code != 0:
+            self._status(f"pip install failed (exit {code}).")
+            QMessageBox.warning(
+                self, "Install failed",
+                f"pip could not install the missing requirements (exit {code}).\n"
+                "See the Output panel for details.",
+            )
+            return
+        self._status("Missing requirements installed.")
+
+    def _auto_check_requirements(self) -> None:
+        """On opening a project, quietly flag missing requirements in the status
+        bar (no modal) so a silent gap like a missing icon font is visible."""
+        from khervepy import requirements as reqmod
+        from khervepy.proc import python_executable
+
+        path = reqmod.find_requirements_file(self.project_root)
+        if not path:
+            return
+        python = python_executable(self.project_root)
+        if not python:
+            return
+        thread = QThread(self)
+        worker = _Worker(lambda: reqmod.check_requirements(path, python))
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+
+        def cleanup():
+            thread.quit()
+            thread.wait()
+            if thread in self._gh_threads:
+                self._gh_threads.remove(thread)
+
+        def done(result):
+            if result.missing:
+                self._status(
+                    f"{len(result.missing)} requirement(s) missing — "
+                    "Run ▸ Check requirements.txt…"
+                )
+            cleanup()
+
+        worker.done.connect(done)
+        worker.failed.connect(lambda _m: cleanup())
+        self._gh_threads.append(thread)
+        thread.start()
 
     # --- github ----------------------------------------------------------
     def set_github_token(self) -> None:
