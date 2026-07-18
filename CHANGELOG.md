@@ -3,6 +3,16 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.33.2 — 2026-07-18
+
+### Fixed
+- **Live program output in the Output panel.** Run now launches the interpreter
+  unbuffered (`python -u`, with `PYTHONUNBUFFERED=1`), so a program's `print()`
+  output streams into the Output panel as it happens. Previously stdout was
+  block-buffered on the pipe and only appeared when the process exited, leaving
+  the Output panel looking empty for the whole run (indefinitely for a GUI app
+  left open).
+
 ## 0.33.1 — 2026-07-18
 
 ### Fixed

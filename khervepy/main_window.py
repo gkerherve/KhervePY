@@ -932,7 +932,7 @@ class MainWindow(QMainWindow):
         self._run_python_file(editor.path)
 
     def _run_python_file(self, path: str) -> None:
-        from PyQt6.QtCore import QProcess
+        from PyQt6.QtCore import QProcess, QProcessEnvironment
         from khervepy.proc import hide_console, python_executable
 
         python = python_executable(self.project_root)
@@ -951,6 +951,12 @@ class MainWindow(QMainWindow):
         hide_console(proc)
         proc.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         proc.setWorkingDirectory(self.project_root)
+        # Force unbuffered stdout/stderr so the program's prints stream into the
+        # Output panel live; a pipe (not a console) otherwise block-buffers them,
+        # leaving Output empty until the process exits.
+        env = QProcessEnvironment.systemEnvironment()
+        env.insert("PYTHONUNBUFFERED", "1")
+        proc.setProcessEnvironment(env)
         proc.readyReadStandardOutput.connect(
             lambda: self.output.insertPlainText(
                 bytes(proc.readAllStandardOutput()).decode(errors="replace")
@@ -958,7 +964,7 @@ class MainWindow(QMainWindow):
         )
         proc.finished.connect(self._on_run_finished)
         self._killed = False
-        proc.start(python, [path])
+        proc.start(python, ["-u", path])
         self._run_proc = proc  # keep a reference
         self._set_running(True)
 
