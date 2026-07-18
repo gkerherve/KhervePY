@@ -63,23 +63,41 @@ def hide_console(proc) -> None:
         pass
 
 
-def python_executable(project_root: str | None = None) -> str:
-    """Return a usable Python interpreter path.
+def project_venv_python(project_root: str | None) -> str:
+    """Return the interpreter of *project_root*'s own virtualenv, or "".
 
-    When running from source this is simply ``sys.executable``. In a frozen
-    build ``sys.executable`` is the app itself, so prefer the project's own
-    virtualenv, then any ``python`` on ``PATH``. Returns "" if none is found.
+    Looks for the usual venv directory names in the project root and returns
+    the interpreter inside the first one found.
     """
+    if not project_root:
+        return ""
+    sub = "Scripts" if _IS_WINDOWS else "bin"
+    exe = "python.exe" if _IS_WINDOWS else "python"
+    for name in ("venv", ".venv", "env", ".env"):
+        candidate = os.path.join(project_root, name, sub, exe)
+        if os.path.isfile(candidate):
+            return candidate
+    return ""
+
+
+def python_executable(project_root: str | None = None) -> str:
+    """Return a usable Python interpreter path for running the project's code.
+
+    A project's **own virtualenv wins** — like a real IDE's project
+    interpreter — so each project runs in the environment where its declared
+    dependencies live, even when KhervePY itself is launched from a different
+    interpreter that happens to be missing them.
+
+    Falls back to ``sys.executable`` when running from source (no project venv),
+    or, in a frozen build where ``sys.executable`` is the app itself, to any
+    ``python`` on ``PATH``. Returns "" if none is found.
+    """
+    venv = project_venv_python(project_root)
+    if venv:
+        return venv
+
     if not getattr(sys, "frozen", False):
         return sys.executable
-
-    if project_root:
-        sub = "Scripts" if _IS_WINDOWS else "bin"
-        exe = "python.exe" if _IS_WINDOWS else "python"
-        for name in ("venv", ".venv", "env", ".env"):
-            candidate = os.path.join(project_root, name, sub, exe)
-            if os.path.isfile(candidate):
-                return candidate
 
     for name in ("python", "python3", "py"):
         found = shutil.which(name)

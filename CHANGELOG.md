@@ -3,6 +3,18 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.33.1 — 2026-07-18
+
+### Fixed
+- **Run scripts in the project's own virtualenv.** `python_executable()` now
+  prefers a project's own `venv`/`.venv`/`env`/`.env` interpreter — like a real
+  IDE's project interpreter — instead of always running child scripts in
+  KhervePY's own interpreter when launched from source. This fixes the case
+  where running another project (e.g. KhervePaint) through KhervePY executed it
+  in KhervePY's venv, which was missing that project's dependencies (`qtawesome`),
+  making the target's toolbar icons silently fall back to text. Run, Debug and
+  the new requirements check all now target the project's declared environment.
+
 ## 0.33.0 — 2026-07-18
 
 ### Added
