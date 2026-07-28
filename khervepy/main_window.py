@@ -57,6 +57,11 @@ from khervepy.themes import (
 )
 
 
+def _decode(data) -> str:
+    """Decode a chunk of child-process output for the Output panel."""
+    return bytes(data).decode("utf-8", errors="replace")
+
+
 class MainWindow(QMainWindow):
     """Top-level IDE window."""
 
@@ -920,9 +925,46 @@ class MainWindow(QMainWindow):
         "fitz": "PyMuPDF",
     }
 
+    # --- Output panel plumbing -------------------------------------------
+    def _output_append(self, text: str) -> None:
+        """Append to the Output panel, always at the end and always visible.
+
+        ``insertPlainText`` writes at the caret, so a click anywhere in the
+        panel would scatter later output around it; append explicitly instead.
+        """
+        if not text:
+            return
+        from PyQt6.QtGui import QTextCursor
+
+        cursor = self.output.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        cursor.insertText(text)
+        self.output.setTextCursor(cursor)
+        self.output.ensureCursorVisible()
+
+    def _stream_output(self, proc) -> None:
+        """Stream both channels of *proc* into the Output panel."""
+        proc.readyReadStandardOutput.connect(
+            lambda: self._output_append(_decode(proc.readAllStandardOutput()))
+        )
+        proc.readyReadStandardError.connect(
+            lambda: self._output_append(_decode(proc.readAllStandardError()))
+        )
+
+    def _drain_output(self, proc) -> None:
+        """Read whatever the child left in the pipes when it exited.
+
+        A program that dies quickly — an ImportError on line 1 — can exit
+        before Qt delivers the last ``readyRead``, so the traceback would
+        otherwise never reach the panel.
+        """
+        self._output_append(_decode(proc.readAllStandardOutput()))
+        self._output_append(_decode(proc.readAllStandardError()))
+
     def run_current(self) -> None:
         editor = self.current_editor()
         if not editor:
+            self._status("Nothing to run — open a Python file first.")
             return
         if editor.isModified() or not editor.path:
             self.save_current()
@@ -950,23 +992,57 @@ class MainWindow(QMainWindow):
         proc = QProcess(self)
         hide_console(proc)
         proc.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
-        proc.setWorkingDirectory(self.project_root)
+        cwd = self.project_root or os.path.dirname(path)
+        proc.setWorkingDirectory(cwd)
         # Force unbuffered stdout/stderr so the program's prints stream into the
         # Output panel live; a pipe (not a console) otherwise block-buffers them,
-        # leaving Output empty until the process exits.
+        # leaving Output empty until the process exits. UTF-8 keeps tracebacks
+        # with accents or arrows readable instead of mojibake.
         env = QProcessEnvironment.systemEnvironment()
         env.insert("PYTHONUNBUFFERED", "1")
+        env.insert("PYTHONIOENCODING", "utf-8")
         proc.setProcessEnvironment(env)
-        proc.readyReadStandardOutput.connect(
-            lambda: self.output.insertPlainText(
-                bytes(proc.readAllStandardOutput()).decode(errors="replace")
-            )
-        )
+        # Echo the command first: which interpreter and which directory a run
+        # used is the single most useful clue when it behaves differently from
+        # a terminal, and it costs one line.
+        self._output_append(f'"{python}" -u "{path}"\n[cwd: {cwd}]\n\n')
+        self._stream_output(proc)
+        proc.errorOccurred.connect(lambda err: self._on_run_error(err, python))
         proc.finished.connect(self._on_run_finished)
         self._killed = False
-        proc.start(python, ["-u", path])
         self._run_proc = proc  # keep a reference
+        # Arm the Run/Stop icons *before* starting: a failure to start emits
+        # errorOccurred synchronously from start(), and arming afterwards would
+        # overwrite the idle state that handler just restored.
         self._set_running(True)
+        proc.start(python, ["-u", path])
+
+    def _on_run_error(self, err, python: str) -> None:
+        """Report a QProcess-level failure in the Output panel.
+
+        Without this a start failure is completely invisible: the child never
+        writes a byte and ``finished`` is never emitted, so Output stays empty
+        and the Run button stays green for ever.
+        """
+        from PyQt6.QtCore import QProcess
+
+        if self._killed and err == QProcess.ProcessError.Crashed:
+            return  # our own Stop button; reported by _on_run_finished
+        reasons = {
+            QProcess.ProcessError.FailedToStart:
+                f"could not start the interpreter\n  {python}\n"
+                f"in the working directory\n  {self.project_root}",
+            QProcess.ProcessError.Crashed: "the program crashed.",
+            QProcess.ProcessError.Timedout: "the process timed out.",
+            QProcess.ProcessError.WriteError: "could not write to the process.",
+            QProcess.ProcessError.ReadError:
+                "could not read the process output.",
+        }
+        reason = reasons.get(err, "the process failed for an unknown reason.")
+        self._output_append(f"\n[KhervePY] Run failed — {reason}\n")
+        self._status("Run failed — see the Output panel.")
+        if err == QProcess.ProcessError.FailedToStart:
+            self._set_running(False)  # `finished` will never arrive
 
     def _no_python_message(self) -> None:
         QMessageBox.warning(
@@ -1016,14 +1092,25 @@ class MainWindow(QMainWindow):
         self.stop_action.setIcon(icons.icon("stop", stop_color))
         self.stop_action.setEnabled(running)
 
-    def _on_run_finished(self, code: int, _status) -> None:
+    def _on_run_finished(self, code: int, status) -> None:
+        from PyQt6.QtCore import QProcess
+
+        proc = getattr(self, "_run_proc", None)
+        if proc is not None:
+            self._drain_output(proc)  # last bytes of a fast-failing program
         self._set_running(False)
         if self._killed:
             self._killed = False
+            self._output_append("\n[Process stopped]\n")
             self._status("Program stopped.")
             return
-        self._status(f"Process exited ({code}).")
-        if code == 0:
+        if status == QProcess.ExitStatus.CrashExit:
+            self._output_append("\n[Process crashed]\n")
+            self._status("Process crashed.")
+        else:
+            self._output_append(f"\n[Process finished with exit code {code}]\n")
+            self._status(f"Process exited ({code}).")
+        if code == 0 and status == QProcess.ExitStatus.NormalExit:
             return
         # A crash on a missing import is the most common first-run failure;
         # offer to pip-install it into the interpreter that ran the script.
@@ -1060,16 +1147,17 @@ class MainWindow(QMainWindow):
             return
         self.output_dock.show()
         self.output_dock.raise_()
-        self.output.appendPlainText(f"\n$ {python} -m pip install {pkg}\n")
+        self._output_append(f'\n$ "{python}" -m pip install {pkg}\n')
         self._status(f"Installing {pkg}…")
 
         proc = QProcess(self)
         hide_console(proc)
         proc.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         proc.setWorkingDirectory(self.project_root)
-        proc.readyReadStandardOutput.connect(
-            lambda: self.output.insertPlainText(
-                bytes(proc.readAllStandardOutput()).decode(errors="replace")
+        self._stream_output(proc)
+        proc.errorOccurred.connect(
+            lambda _e: self._output_append(
+                f"\n[KhervePY] pip could not be started with\n  {python}\n"
             )
         )
         proc.finished.connect(lambda c, _s: self._on_install_finished(c, pkg))
@@ -1193,8 +1281,8 @@ class MainWindow(QMainWindow):
             return
         self.output_dock.show()
         self.output_dock.raise_()
-        self.output.appendPlainText(
-            f"\n$ {python} -m pip install {' '.join(specs)}\n"
+        self._output_append(
+            f"\n$ \"{python}\" -m pip install {' '.join(specs)}\n"
         )
         self._status("Installing missing requirements…")
 
@@ -1202,9 +1290,10 @@ class MainWindow(QMainWindow):
         hide_console(proc)
         proc.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         proc.setWorkingDirectory(self.project_root)
-        proc.readyReadStandardOutput.connect(
-            lambda: self.output.insertPlainText(
-                bytes(proc.readAllStandardOutput()).decode(errors="replace")
+        self._stream_output(proc)
+        proc.errorOccurred.connect(
+            lambda _e: self._output_append(
+                f"\n[KhervePY] pip could not be started with\n  {python}\n"
             )
         )
         proc.finished.connect(lambda c, _s: self._on_requirements_installed(c))

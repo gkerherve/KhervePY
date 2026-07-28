@@ -3,6 +3,38 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.34.0 — 2026-07-28
+
+### Fixed
+- **Never run a project in KhervePY's own virtualenv.** When the opened project
+  has no `venv` of its own, `python_executable()` used to fall back to
+  `sys.executable` — which, for a KhervePY started from `.venv`, is the editor's
+  private environment holding PyQt6/QScintilla and nothing the project needs.
+  KherveStats died on `import requests` for exactly this reason while working
+  fine in PyCharm. The fallback is now the base interpreter that venv was made
+  from, or `python` on `PATH`: the same one a plain terminal would use.
+- **A failed Run can no longer be silent.** `QProcess.errorOccurred` was never
+  connected, so a run that failed before the child wrote a byte (missing or
+  broken interpreter, unusable working directory) left the Output panel empty
+  and the Run button stuck on green for ever — no error anywhere. It is now
+  reported in the Output panel and the Run/Stop icons return to idle.
+
+### Changed
+- **The Output panel reads like a real console.** Every run now echoes the
+  interpreter, the script and the working directory before starting, and closes
+  with `[Process finished with exit code N]` (or `[Process crashed]` /
+  `[Process stopped]`). Which interpreter a run used is the first thing worth
+  knowing when it behaves differently from a terminal.
+- **Nothing is dropped or misplaced.** Both channels are streamed and the pipes
+  are drained once more when the process exits, so a program that dies
+  immediately — an `ImportError` on line 1 — still shows its traceback. Output
+  is appended at the end rather than at the caret, so clicking in the panel no
+  longer scatters later output around the click, and the view auto-scrolls.
+- Child output is decoded as UTF-8 (`PYTHONIOENCODING=utf-8`), so tracebacks
+  containing accents or arrows arrive readable instead of as mojibake.
+- Pressing Run with no file open says so in the status bar instead of doing
+  nothing at all.
+
 ## 0.33.2 — 2026-07-18
 
 ### Fixed
