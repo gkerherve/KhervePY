@@ -3,6 +3,25 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.38.1 — 2026-07-29
+
+### Fixed
+- **Run works in the installed build again.** Windows keeps a 0-byte
+  `python.exe` in `%LOCALAPPDATA%\Microsoft\WindowsApps` — an "app execution
+  alias" whose only job is to open the Microsoft Store — and that directory
+  sits near the front of `PATH`. Interpreter discovery took the first `python`
+  on `PATH`, so the frozen KhervePY (which has no interpreter of its own to
+  fall back on) always handed `QProcess` the placeholder, and every Run died
+  with `could not start the interpreter`.
+- Discovery now walks `PATH` in full and skips those stubs, then falls back to
+  the interpreters registered under `SOFTWARE\Python\PythonCore` and to the
+  standard install directories (`…\Programs\Python\Python3*`,
+  `C:\Program Files\Python3*`, `C:\Python3*`), newest first. A real install is
+  found even when it was never added to `PATH`.
+- If a stub is genuinely the only thing on the machine, Run still reports the
+  failure — but now explains that the path is a Store placeholder and how to
+  fix it.
+
 ## 0.38.0 — 2026-07-29
 
 ### Added

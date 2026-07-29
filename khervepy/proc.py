@@ -9,7 +9,9 @@ build on Windows:
   ``subprocess`` and ``QProcess`` children.
 * **A real Python interpreter.** In a frozen build ``sys.executable`` is
   ``KhervePY.exe`` itself, not Python — so Run/Debug/pip must locate an actual
-  interpreter instead.
+  interpreter instead. On Windows that means stepping around the Microsoft
+  Store *app execution alias* (a 0-byte stub in ``WindowsApps`` that shadows
+  the real ``python.exe`` on ``PATH``).
 
 Copyright (C) 2026 Gwilherm Kerherve
 
@@ -21,6 +23,7 @@ the Free Software Foundation, either version 3 of the License, or
 
 from __future__ import annotations
 
+import glob
 import os
 import shutil
 import subprocess
@@ -93,13 +96,129 @@ def _base_python() -> str:
     return candidate if os.path.isfile(candidate) else ""
 
 
+def is_store_stub(path: str) -> bool:
+    """True when *path* is a Microsoft Store *app execution alias*, not an exe.
+
+    Windows ships 0-byte reparse points in ``%LOCALAPPDATA%\\Microsoft\\
+    WindowsApps`` — ``python.exe`` among them — whose only job is to open the
+    Store when the app is not installed. That directory sits near the front of
+    ``PATH``, so a naive ``shutil.which("python")`` returns the stub and every
+    launch fails with "could not start the interpreter".
+    """
+    if not _IS_WINDOWS or not path:
+        return False
+    if "\\windowsapps\\" not in path.replace("/", "\\").lower():
+        return False
+    try:
+        return os.path.getsize(path) == 0
+    except OSError:
+        return True
+
+
+def _path_pythons() -> list[str]:
+    """Every ``python`` on ``PATH``, in ``PATH`` order (stubs included)."""
+    names = (("python.exe", "python3.exe") if _IS_WINDOWS
+             else ("python3", "python"))
+    found: list[str] = []
+    for directory in os.environ.get("PATH", "").split(os.pathsep):
+        if not directory:
+            continue
+        for name in names:
+            candidate = os.path.join(os.path.expandvars(directory), name)
+            if os.path.isfile(candidate) and candidate not in found:
+                found.append(candidate)
+    return found
+
+
+def _registry_pythons() -> list[str]:
+    """Interpreters registered under ``SOFTWARE\\Python\\PythonCore``.
+
+    This is what every Windows Python installer writes, so it finds real
+    installs that are not on ``PATH`` at all — the common case when someone
+    ticked nothing during setup.
+    """
+    if not _IS_WINDOWS:
+        return []
+    try:
+        import winreg
+    except ImportError:
+        return []
+
+    found: list[tuple[tuple, str]] = []
+    roots = (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE)
+    for root in roots:
+        try:
+            key = winreg.OpenKey(root, r"SOFTWARE\Python\PythonCore")
+        except OSError:
+            continue
+        with key:
+            for index in range(winreg.QueryInfoKey(key)[0]):
+                try:
+                    version = winreg.EnumKey(key, index)
+                    with winreg.OpenKey(
+                            key, version + r"\InstallPath") as sub:
+                        install = winreg.QueryValue(sub, "")
+                except OSError:
+                    continue
+                exe = os.path.join(install, "python.exe")
+                if os.path.isfile(exe):
+                    found.append((_version_key(version), exe))
+    # Newest interpreter first: 3.13 beats 3.9, and "3.12" beats "3.12-32".
+    found.sort(key=lambda item: item[0], reverse=True)
+    return [exe for _key, exe in found]
+
+
+def _version_key(version: str) -> tuple:
+    """Sort key for a registry version tag such as ``3.12`` or ``3.12-32``."""
+    base, _, suffix = version.partition("-")
+    parts = tuple(int(p) if p.isdigit() else 0 for p in base.split("."))
+    return parts + (0 if suffix else 1,)
+
+
+def _wellknown_pythons() -> list[str]:
+    """Interpreters in the usual Windows install locations, newest first."""
+    if not _IS_WINDOWS:
+        return []
+    patterns = [
+        os.path.join(os.environ.get("LOCALAPPDATA", ""),
+                     "Programs", "Python", "Python3*", "python.exe"),
+        os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"),
+                     "Python3*", "python.exe"),
+        r"C:\Python3*\python.exe",
+    ]
+    found: list[str] = []
+    for pattern in patterns:
+        if not os.path.isabs(pattern):
+            continue  # the environment variable it was built from is unset
+        found.extend(p for p in glob.glob(pattern) if os.path.isfile(p))
+    found.sort(reverse=True)  # Python313 before Python39
+    return found
+
+
 def _path_python() -> str:
-    """Return the first ``python`` found on ``PATH``, or ""."""
-    for name in ("python", "python3", "py"):
-        found = shutil.which(name)
-        if found:
-            return found
-    return ""
+    """Return a usable system Python, preferring real installs over stubs.
+
+    Order: real interpreters on ``PATH``, then registered installs, then the
+    standard install directories. A Store alias stub is only returned when
+    nothing else exists — better a failing launch with a familiar path than no
+    path at all.
+    """
+    stubs: list[str] = []
+    for candidate in _path_pythons():
+        if is_store_stub(candidate):
+            stubs.append(candidate)
+        else:
+            return candidate
+
+    for candidate in _registry_pythons() + _wellknown_pythons():
+        if os.path.isfile(candidate) and not is_store_stub(candidate):
+            return candidate
+
+    # Last resort: the launcher, which resolves its own interpreter.
+    launcher = shutil.which("py")
+    if launcher and not is_store_stub(launcher):
+        return launcher
+    return stubs[0] if stubs else ""
 
 
 def in_own_venv() -> bool:

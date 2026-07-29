@@ -1064,13 +1064,22 @@ class MainWindow(QMainWindow):
         and the Run button stays green for ever.
         """
         from PyQt6.QtCore import QProcess
+        from khervepy.proc import is_store_stub
 
         if self._killed and err == QProcess.ProcessError.Crashed:
             return  # our own Stop button; reported by _on_run_finished
+        hint = ""
+        if is_store_stub(python):
+            # A 0-byte WindowsApps alias: Python was never installed from the
+            # Store, so the stub only knows how to open the Store page.
+            hint = ("\nThat path is a Microsoft Store placeholder, not a real "
+                    "Python.\nInstall Python from python.org, or turn off the "
+                    "'python' app\nexecution alias in Settings › Apps › "
+                    "Advanced app settings.")
         reasons = {
             QProcess.ProcessError.FailedToStart:
                 f"could not start the interpreter\n  {python}\n"
-                f"in the working directory\n  {self.project_root}",
+                f"in the working directory\n  {self.project_root}" + hint,
             QProcess.ProcessError.Crashed: "the program crashed.",
             QProcess.ProcessError.Timedout: "the process timed out.",
             QProcess.ProcessError.WriteError: "could not write to the process.",
