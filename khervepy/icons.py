@@ -45,6 +45,26 @@ def _folder(p, px, color):
     ]))
 
 
+def _open_folder(p, px, color):
+    # An *open* folder — back panel plus a slanted front flap — so it reads
+    # differently from the closed `folder` glyph at 18px in the cockpit.
+    p.drawPolyline(_poly(px, [
+        (0.12, 0.72), (0.12, 0.26), (0.38, 0.26), (0.46, 0.36),
+        (0.78, 0.36), (0.78, 0.48),
+    ]))
+    p.drawPolyline(_poly(px, [
+        (0.12, 0.72), (0.26, 0.48), (0.92, 0.48), (0.78, 0.72), (0.12, 0.72),
+    ]))
+
+
+def _new_instance(p, px, color):
+    # A second window opening behind the first = another KhervePY process.
+    p.drawPolyline(_poly(px, [(0.34, 0.18), (0.86, 0.18), (0.86, 0.62)]))
+    p.drawRect(QRectF(_P(px, 0.14, 0.34), _P(px, 0.68, 0.82)))
+    p.drawLine(_P(px, 0.29, 0.58), _P(px, 0.53, 0.58))
+    p.drawLine(_P(px, 0.41, 0.46), _P(px, 0.41, 0.70))
+
+
 def _file(p, px, color):
     p.drawPolyline(_poly(px, [
         (0.28, 0.16), (0.60, 0.16), (0.74, 0.30), (0.74, 0.84),
@@ -206,6 +226,8 @@ def _packages(p, px, color):
 _GLYPHS = {
     "branch": _branch,
     "folder": _folder,
+    "open_folder": _open_folder,
+    "new_instance": _new_instance,
     "file": _file,
     "new": _new,
     "save": _save,

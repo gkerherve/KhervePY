@@ -3,6 +3,21 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.39.0 — 2026-07-29
+
+### Added
+- **Open Folder and New Instance in the mini window.** The cockpit has no menu
+  bar and no file tree, so switching project used to mean restoring the full
+  window first. Two new icons sit left of Run: an open-folder glyph and a
+  second-window glyph, both drawn in the active theme like the rest of the bar.
+- **Opening a folder opens its entry point.** KhervePY now looks in the project
+  root for `main.py`, then for a script named after the folder itself
+  (`KherveStats/KherveStats.py`), and opens the first one it finds — so Run
+  works immediately after Open, which is the whole point of the cockpit. If
+  neither exists the status line says so instead of leaving Run pointing at
+  nothing. In the mini window, where the status bar is hidden, that message
+  goes to the Output panel.
+
 ## 0.38.1 — 2026-07-29
 
 ### Fixed

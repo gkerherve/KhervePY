@@ -311,7 +311,12 @@ class MainWindow(QMainWindow):
         )
 
     def _build_compact_toolbar(self) -> None:
-        """A minimal toolbar shown only in compact mode: Run, Stop, Maximise."""
+        """The cockpit's own toolbar: Open, New Instance, Run, Stop, Maximise.
+
+        Open and New Instance are here because the cockpit has no menu bar and
+        no file tree: without them, switching project means restoring the full
+        window first.
+        """
         from PyQt6.QtWidgets import QSizePolicy
 
         ct = QToolBar("Compact")
@@ -322,17 +327,30 @@ class MainWindow(QMainWindow):
         # one the cockpit's two panels do not get.
         ct.setIconSize(QSize(18, 18))
         ct.setContentsMargins(0, 0, 0, 0)
+        color = QColor(THEMES.get(self.settings.theme, THEMES[DEFAULT_THEME]).foreground)
+
+        def add(glyph, text, slot, tip):
+            act = QAction(icons.icon(glyph, color), text, self)
+            act.setToolTip(tip)
+            act.triggered.connect(slot)
+            self._icon_actions.append((act, glyph))
+            ct.addAction(act)
+            return act
+
+        add("open_folder", "Open Folder", self.open_folder_dialog,
+            "Open a project folder  (Ctrl+K)")
+        add("new_instance", "New Instance", self.new_instance,
+            "Launch a second KhervePY window")
+        ct.addSeparator()
         ct.addAction(self.run_action)
         ct.addAction(self.stop_action)
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         ct.addWidget(spacer)
-        color = QColor(THEMES.get(self.settings.theme, THEMES[DEFAULT_THEME]).foreground)
-        self.restore_action = QAction(icons.icon("maximise", color), "Maximise", self)
-        self.restore_action.setToolTip("Restore the full editor")
-        self.restore_action.triggered.connect(self.exit_compact_mode)
-        self._icon_actions.append((self.restore_action, "maximise"))
-        ct.addAction(self.restore_action)
+        self.restore_action = add(
+            "maximise", "Maximise", self.exit_compact_mode,
+            "Restore the full editor",
+        )
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, ct)
         ct.hide()
         self.compact_toolbar = ct
@@ -727,10 +745,41 @@ class MainWindow(QMainWindow):
         except OSError as exc:
             QMessageBox.warning(self, "Open location failed", str(exc))
 
+    def project_entry_point(self, root: str) -> str:
+        """Return the project's obvious script to run, or "".
+
+        Two conventions cover almost every project: ``main.py``, and a script
+        named after the folder itself (``KherveStats/KherveStats.py``). Only
+        the project root is looked at — a ``main.py`` buried three packages
+        deep is not what someone means by "run this project".
+        """
+        root = os.path.abspath(root)
+        names = ("main.py", os.path.basename(os.path.normpath(root)) + ".py")
+        for name in names:
+            candidate = os.path.join(root, name)
+            if os.path.isfile(candidate):
+                return candidate
+        return ""
+
     def open_folder_dialog(self) -> None:
         path = QFileDialog.getExistingDirectory(self, "Open folder", self.project_root)
-        if path:
-            self.set_project_root(path)
+        if not path:
+            return
+        self.set_project_root(path)
+        # Open the entry point so Run works straight away — in the cockpit
+        # especially, where there is no file tree to pick a script from.
+        entry = self.project_entry_point(path)
+        if entry:
+            self.open_path(entry)
+            note = f"Opened {os.path.basename(entry)} — press F5 to run."
+        else:
+            note = (f"Opened {os.path.basename(os.path.normpath(path))} — no "
+                    "main.py found; open a file to run.")
+        self._status(note)
+        if self._compact:
+            # The cockpit hides the status bar, so say it where it can be seen.
+            self.output.clear()
+            self._output_append(f"[KhervePY] {note}\n")
 
     def open_file_dialog(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Open file", self.project_root)
