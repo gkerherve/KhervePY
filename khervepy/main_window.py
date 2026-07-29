@@ -318,8 +318,10 @@ class MainWindow(QMainWindow):
         ct.setObjectName("compact_toolbar")
         ct.setMovable(False)
         ct.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
-        ct.setIconSize(QSize(24, 24))
-        ct.addWidget(QLabel(" Run & Commit "))
+        # Deliberately smaller than the main toolbar: every pixel of chrome is
+        # one the cockpit's two panels do not get.
+        ct.setIconSize(QSize(18, 18))
+        ct.setContentsMargins(0, 0, 0, 0)
         ct.addAction(self.run_action)
         ct.addAction(self.stop_action)
         spacer = QWidget()
@@ -1703,6 +1705,10 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(msg, 8000)
 
     # --- compact "run & commit" cockpit ----------------------------------
+    # Small enough to sit beside another window on a laptop screen; the two
+    # panels still have room, and any resize is remembered from then on.
+    _COMPACT_SIZE = (720, 420)
+
     def enter_compact_mode(self) -> None:
         """Collapse to a small window: Output left, Log + commit message right."""
         if self._compact:
@@ -1733,13 +1739,19 @@ class MainWindow(QMainWindow):
         self.output_dock.raise_()
 
         self.compact_toolbar.show()
+        # Drop the layout-derived minimum: it was computed for the tab area and
+        # dock furniture now hidden, and would pin the window far wider than
+        # these two panels need. Qt recomputes it from the cockpit's own
+        # contents, which is what lets the window be dragged genuinely small.
+        self.setMinimumSize(QSize(0, 0))
+
         # Reuse the size, on-screen position and column split from last time.
         cgeom = self.settings.restore_compact_geometry()
         cstate = self.settings.restore_compact_state()
         if cgeom is not None:
             self.restoreGeometry(cgeom)
         else:
-            self.resize(1100, 600)
+            self.resize(*self._COMPACT_SIZE)
         if cstate is not None:
             self.restoreState(cstate)
         else:
@@ -1761,6 +1773,11 @@ class MainWindow(QMainWindow):
         self._compact = False
         self.commit_log.set_compact(False)
         self.compact_toolbar.hide()
+        # Clear rather than restore: the full window's minimum is Qt's, derived
+        # from the layout, so it recomputes correctly once the editor and docks
+        # are visible again. Pinning the old numbers back would freeze whatever
+        # minimum happened to apply when the cockpit was entered.
+        self.setMinimumSize(QSize(0, 0))
         self.menuBar().show()
         self.statusBar().show()
         self.main_toolbar.show()

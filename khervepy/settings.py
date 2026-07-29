@@ -172,11 +172,16 @@ class Settings:
         return self._q.value("window/state")
 
     # --- compact ("mini") mode window ------------------------------------
+    # Both keys are versioned together: geometry saved by an older KhervePY
+    # holds that version's larger cockpit, and restoring it would silently
+    # undo a change to the default size.
+    _COMPACT_GEOMETRY_KEY = "window/compact_geometry_v2"
+
     def save_compact_geometry(self, geometry) -> None:
-        self._q.setValue("window/compact_geometry", geometry)
+        self._q.setValue(self._COMPACT_GEOMETRY_KEY, geometry)
 
     def restore_compact_geometry(self):
-        return self._q.value("window/compact_geometry")
+        return self._q.value(self._COMPACT_GEOMETRY_KEY)
 
     # The key is versioned: a layout saved by an older KhervePY pins the docks
     # that version put in the cockpit (Terminal on the left), and restoring it

@@ -153,13 +153,24 @@ class CommitLog(QWidget):
         layout.addWidget(splitter, 1)
 
     def set_compact(self, on: bool) -> None:
-        """Compact mode wants the graph and the commit message only.
+        """Strip the panel down for the small cockpit window.
 
-        The window is a narrow cockpit there; the files-changed list needs the
-        space more than it earns it, and double-clicking a file to open a diff
-        makes no sense with the editor hidden.
+        The files-changed list needs more space than it earns there, and
+        double-clicking a file to open a diff makes no sense with the editor
+        hidden. The Author column goes too — a solo repo has one — and the
+        remaining columns tighten so the Description keeps the room.
         """
         self._files_panel.setVisible(not on)
+        self.summary.setVisible(not on)
+        self.tree.setColumnHidden(3, on)          # Author
+        self.tree.setColumnWidth(0, 55 if on else 90)    # Graph
+        self.tree.setColumnWidth(2, 78 if on else 110)   # Date
+        header = self.tree.header()
+        # With Author gone the Description should take up the slack.
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(
+            1, QHeaderView.ResizeMode.Stretch if on
+            else QHeaderView.ResizeMode.Interactive)
 
     # --- data ------------------------------------------------------------
     def set_repo(self, path: str) -> None:

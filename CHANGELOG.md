@@ -3,6 +3,25 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.37.0 — 2026-07-29
+
+### Changed
+- **The mini (compact) window is much smaller.** It opens at 720×420 instead of
+  1100×600 — small enough to sit beside another window on a laptop screen.
+- **It can now be dragged genuinely small**, down to about 260×268. The window's
+  minimum size is derived by Qt from the tab area and dock furniture that
+  compact mode hides, and it used to keep pinning the cockpit far wider than
+  its two panels need. Entering compact mode clears that minimum so Qt
+  recomputes it from the cockpit's own contents; leaving clears it again so the
+  full editor's minimum comes back correctly.
+- The compact toolbar lost its "Run & Commit" label and dropped to 18px icons.
+  Every pixel of chrome is one the two panels do not get.
+- In compact mode the Log hides its summary line and its Author column — a solo
+  repo has one author — and tightens the Graph and Date columns so the commit
+  Description keeps the room.
+- The saved cockpit geometry moves to a new key, so a size saved by an earlier
+  version does not silently restore the old larger window.
+
 ## 0.36.0 — 2026-07-29
 
 ### Added
