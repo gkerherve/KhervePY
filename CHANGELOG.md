@@ -3,6 +3,25 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.38.0 — 2026-07-29
+
+### Added
+- **Errors show in red in the Output panel.** Anything the program writes to
+  stderr — tracebacks, warnings, a failed pip — is coloured, so a failure is
+  visible at a glance instead of being one more grey line in a wall of output.
+  KhervePY's own failure lines are red too, and the closing
+  `[Process finished with exit code N]` turns red only for a non-zero exit.
+- The red is chosen per theme: a bright `#ff6b6b` on the dark themes, a deeper
+  `#c62828` on GitHub Light and Solarized Light, picked from the theme
+  background's luminance so it stays legible in all thirteen.
+
+### Changed
+- Run, and both pip paths, now use `SeparateChannels` rather than
+  `MergedChannels` — stderr has to arrive on its own channel to be told apart.
+  The cost is that stdout and stderr no longer interleave in the exact order
+  the program wrote them; that is the same trade every IDE colouring errors
+  makes.
+
 ## 0.37.0 — 2026-07-29
 
 ### Changed

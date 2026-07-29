@@ -938,29 +938,54 @@ class MainWindow(QMainWindow):
     }
 
     # --- Output panel plumbing -------------------------------------------
-    def _output_append(self, text: str) -> None:
+    # Reds that stay legible against a dark and a light editor background.
+    _ERROR_DARK = "#ff6b6b"
+    _ERROR_LIGHT = "#c62828"
+
+    def _output_colour(self, error: bool) -> QColor:
+        """The pen for normal output, or the red for anything from stderr."""
+        theme = THEMES.get(self.settings.theme, THEMES[DEFAULT_THEME])
+        if not error:
+            return QColor(theme.foreground)
+        background = QColor(theme.background)
+        # Relative luminance decides which red keeps its contrast.
+        light = (0.299 * background.red() + 0.587 * background.green()
+                 + 0.114 * background.blue()) > 140
+        return QColor(self._ERROR_LIGHT if light else self._ERROR_DARK)
+
+    def _output_append(self, text: str, error: bool = False) -> None:
         """Append to the Output panel, always at the end and always visible.
 
         ``insertPlainText`` writes at the caret, so a click anywhere in the
         panel would scatter later output around it; append explicitly instead.
+        Anything the child wrote to stderr — tracebacks, warnings — goes in red.
         """
         if not text:
             return
-        from PyQt6.QtGui import QTextCursor
+        from PyQt6.QtGui import QTextCursor, QTextCharFormat
 
         cursor = self.output.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
-        cursor.insertText(text)
+        char_format = QTextCharFormat()
+        char_format.setForeground(self._output_colour(error))
+        cursor.insertText(text, char_format)
         self.output.setTextCursor(cursor)
         self.output.ensureCursorVisible()
 
     def _stream_output(self, proc) -> None:
-        """Stream both channels of *proc* into the Output panel."""
+        """Stream both channels of *proc* into the Output panel.
+
+        The channels are kept apart so stderr can be coloured. The cost is that
+        stdout and stderr no longer interleave in the exact order the program
+        wrote them — the same trade every IDE that colours errors makes, and
+        worth it to see a traceback at a glance.
+        """
         proc.readyReadStandardOutput.connect(
             lambda: self._output_append(_decode(proc.readAllStandardOutput()))
         )
         proc.readyReadStandardError.connect(
-            lambda: self._output_append(_decode(proc.readAllStandardError()))
+            lambda: self._output_append(_decode(proc.readAllStandardError()),
+                                        error=True)
         )
 
     def _drain_output(self, proc) -> None:
@@ -971,7 +996,7 @@ class MainWindow(QMainWindow):
         otherwise never reach the panel.
         """
         self._output_append(_decode(proc.readAllStandardOutput()))
-        self._output_append(_decode(proc.readAllStandardError()))
+        self._output_append(_decode(proc.readAllStandardError()), error=True)
 
     def run_current(self) -> None:
         editor = self.current_editor()
@@ -1003,7 +1028,9 @@ class MainWindow(QMainWindow):
 
         proc = QProcess(self)
         hide_console(proc)
-        proc.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        # Separate channels so stderr can be told apart and shown in red.
+        proc.setProcessChannelMode(
+            QProcess.ProcessChannelMode.SeparateChannels)
         cwd = self.project_root or os.path.dirname(path)
         proc.setWorkingDirectory(cwd)
         # Force unbuffered stdout/stderr so the program's prints stream into the
@@ -1051,7 +1078,7 @@ class MainWindow(QMainWindow):
                 "could not read the process output.",
         }
         reason = reasons.get(err, "the process failed for an unknown reason.")
-        self._output_append(f"\n[KhervePY] Run failed — {reason}\n")
+        self._output_append(f"\n[KhervePY] Run failed — {reason}\n", error=True)
         self._status("Run failed — see the Output panel.")
         if err == QProcess.ProcessError.FailedToStart:
             self._set_running(False)  # `finished` will never arrive
@@ -1117,10 +1144,12 @@ class MainWindow(QMainWindow):
             self._status("Program stopped.")
             return
         if status == QProcess.ExitStatus.CrashExit:
-            self._output_append("\n[Process crashed]\n")
+            self._output_append("\n[Process crashed]\n", error=True)
             self._status("Process crashed.")
         else:
-            self._output_append(f"\n[Process finished with exit code {code}]\n")
+            self._output_append(
+                f"\n[Process finished with exit code {code}]\n",
+                error=code != 0)
             self._status(f"Process exited ({code}).")
         if code == 0 and status == QProcess.ExitStatus.NormalExit:
             return
@@ -1164,12 +1193,15 @@ class MainWindow(QMainWindow):
 
         proc = QProcess(self)
         hide_console(proc)
-        proc.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        # Separate channels so stderr can be told apart and shown in red.
+        proc.setProcessChannelMode(
+            QProcess.ProcessChannelMode.SeparateChannels)
         proc.setWorkingDirectory(self.project_root)
         self._stream_output(proc)
         proc.errorOccurred.connect(
             lambda _e: self._output_append(
-                f"\n[KhervePY] pip could not be started with\n  {python}\n"
+                f"\n[KhervePY] pip could not be started with\n  {python}\n",
+                error=True,
             )
         )
         proc.finished.connect(lambda c, _s: self._on_install_finished(c, pkg))
@@ -1300,12 +1332,15 @@ class MainWindow(QMainWindow):
 
         proc = QProcess(self)
         hide_console(proc)
-        proc.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        # Separate channels so stderr can be told apart and shown in red.
+        proc.setProcessChannelMode(
+            QProcess.ProcessChannelMode.SeparateChannels)
         proc.setWorkingDirectory(self.project_root)
         self._stream_output(proc)
         proc.errorOccurred.connect(
             lambda _e: self._output_append(
-                f"\n[KhervePY] pip could not be started with\n  {python}\n"
+                f"\n[KhervePY] pip could not be started with\n  {python}\n",
+                error=True,
             )
         )
         proc.finished.connect(lambda c, _s: self._on_requirements_installed(c))
