@@ -52,6 +52,34 @@ class Settings:
     def menubar_visible(self, value: bool) -> None:
         self._q.setValue("window/menubar_visible", bool(value))
 
+    # --- updates ---------------------------------------------------------
+    @property
+    def check_updates(self) -> bool:
+        """Whether to look for a new release quietly on start-up."""
+        return self._q.value("update/check", True, type=bool)
+
+    @check_updates.setter
+    def check_updates(self, value: bool) -> None:
+        self._q.setValue("update/check", bool(value))
+
+    @property
+    def last_update_check(self) -> str:
+        """ISO date of the last start-up check, so it happens once a day."""
+        return self._q.value("update/last_check", "", type=str)
+
+    @last_update_check.setter
+    def last_update_check(self, value: str) -> None:
+        self._q.setValue("update/last_check", value)
+
+    @property
+    def skipped_version(self) -> str:
+        """A version the user chose to skip; never announced again."""
+        return self._q.value("update/skipped", "", type=str)
+
+    @skipped_version.setter
+    def skipped_version(self, value: str) -> None:
+        self._q.setValue("update/skipped", value)
+
     # --- GitHub ----------------------------------------------------------
     @property
     def github_token(self) -> str:

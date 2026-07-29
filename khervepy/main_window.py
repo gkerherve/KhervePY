@@ -12,9 +12,10 @@ from __future__ import annotations
 
 import os
 
-from PyQt6.QtCore import Qt, QSize, QThread
+from PyQt6.QtCore import Qt, QSize, QThread, QTimer
 from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import (
+    QApplication,
     QComboBox,
     QDockWidget,
     QFileDialog,
@@ -105,6 +106,9 @@ class MainWindow(QMainWindow):
         # Reopen the editor tabs from the previous session.
         self._restore_open_files()
         self._setup_vcs()
+        # Look for a new release once the window is up, so a slow or dead
+        # network never delays the editor appearing.
+        QTimer.singleShot(3000, self._auto_check_updates)
 
     # --- construction ----------------------------------------------------
     def _build_tabs(self) -> None:
@@ -427,6 +431,12 @@ class MainWindow(QMainWindow):
         help_menu.addAction("AI Assistant", self.focus_ai_chat)
         help_menu.addAction("Get an API key…", lambda: self.ai_chat.show_help())
         help_menu.addAction("AI API Keys…", lambda: self.ai_chat.open_keys())
+        help_menu.addSeparator()
+        help_menu.addAction("Check for updates…", self.check_for_updates)
+        auto = help_menu.addAction("Check for updates on start-up")
+        auto.setCheckable(True)
+        auto.setChecked(self.settings.check_updates)
+        auto.toggled.connect(self._set_auto_update_check)
         help_menu.addSeparator()
         help_menu.addAction("About KhervePY", self.about)
 
@@ -1489,6 +1499,176 @@ class MainWindow(QMainWindow):
             self.tree.apply_theme(theme)
         # Run/Stop carry status colours that must survive a theme recolour.
         self._update_run_icons()
+
+    # --- updates ---------------------------------------------------------
+    def _set_auto_update_check(self, on: bool) -> None:
+        self.settings.check_updates = on
+        self._status("Start-up update check "
+                     f"{'enabled' if on else 'disabled'}.")
+
+    def _start_update_check(self, announce: bool) -> None:
+        """Ask GitHub for the latest release on a worker thread.
+
+        *announce* distinguishes the menu action, which always reports back,
+        from the start-up check, which only speaks when there is an update.
+        """
+        from khervepy import updater
+
+        token = self.settings.github_token
+        thread = QThread(self)
+        worker = _Worker(lambda: updater.fetch_latest(token))
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+
+        def cleanup():
+            thread.quit()
+            thread.wait()
+            if thread in self._gh_threads:
+                self._gh_threads.remove(thread)
+
+        def done(release):
+            self._on_update_checked(release, announce)
+            cleanup()
+
+        def failed(message):
+            if announce:
+                self._status(f"Update check failed: {message}")
+            cleanup()
+
+        worker.done.connect(done)
+        worker.failed.connect(failed)
+        self._gh_threads.append(thread)
+        thread.start()
+
+    def check_for_updates(self) -> None:
+        """Help ▸ Check for updates… — always reports the outcome."""
+        self._status("Checking for updates…")
+        self._start_update_check(announce=True)
+
+    def _auto_check_updates(self) -> None:
+        """The quiet start-up check: at most once a day, silent on failure."""
+        from datetime import date
+
+        if not self.settings.check_updates:
+            return
+        today = date.today().isoformat()
+        if self.settings.last_update_check == today:
+            return
+        self.settings.last_update_check = today
+        self._start_update_check(announce=False)
+
+    def _on_update_checked(self, release, announce: bool) -> None:
+        from khervepy import updater
+
+        if release is None:
+            if announce:
+                self._status("Could not reach GitHub to check for updates.")
+            return
+        if not updater.is_newer(release.version):
+            if announce:
+                QMessageBox.information(
+                    self, "Up to date",
+                    f"{__app_name__} {__version__} is the latest version.")
+                self._status("KhervePY is up to date.")
+            return
+        # A version the user chose to skip stays skipped until they ask.
+        if not announce and release.version == self.settings.skipped_version:
+            return
+        self._offer_update(release)
+
+    def _offer_update(self, release) -> None:
+        from khervepy import updater
+
+        notes = release.notes
+        if len(notes) > 1200:
+            notes = notes[:1200] + "\n…"
+        box = QMessageBox(self)
+        box.setWindowTitle("Update available")
+        box.setTextFormat(Qt.TextFormat.RichText)
+        box.setText(
+            f"<h3>{__app_name__} {release.version} is available</h3>"
+            f"<p>You are running {__version__}.</p>")
+        if notes:
+            box.setDetailedText(notes)
+
+        can_install = updater.is_frozen() and bool(release.installer)
+        if can_install:
+            install = box.addButton("Download && install",
+                                    QMessageBox.ButtonRole.AcceptRole)
+        else:
+            install = None
+        page = box.addButton("Open release page",
+                             QMessageBox.ButtonRole.ActionRole)
+        skip = box.addButton("Skip this version",
+                             QMessageBox.ButtonRole.DestructiveRole)
+        box.addButton("Later", QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+
+        clicked = box.clickedButton()
+        if clicked is install:
+            self._install_update(release)
+        elif clicked is page:
+            from PyQt6.QtGui import QDesktopServices
+            from PyQt6.QtCore import QUrl
+            QDesktopServices.openUrl(QUrl(release.page))
+        elif clicked is skip:
+            self.settings.skipped_version = release.version
+            self._status(f"Skipping {release.version}.")
+
+    def _install_update(self, release) -> None:
+        """Download the installer with a progress dialog, then hand over."""
+        from PyQt6.QtWidgets import QProgressDialog
+        from khervepy import updater
+
+        progress = QProgressDialog(
+            f"Downloading {__app_name__} {release.version}…", "Cancel", 0, 100,
+            self)
+        progress.setWindowTitle("Updating")
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+
+        def report(done, total):
+            if progress.wasCanceled():
+                return False
+            if total:
+                progress.setValue(int(100 * done / total))
+            progress.setLabelText(
+                f"Downloading {__app_name__} {release.version}… "
+                f"{done / 1_048_576:.1f} MB")
+            QApplication.processEvents()
+            return True
+
+        try:
+            path = updater.download(release.installer, report)
+        except InterruptedError:
+            self._status("Update cancelled.")
+            return
+        except Exception as exc:
+            progress.close()
+            QMessageBox.warning(
+                self, "Download failed",
+                f"Could not download the update:\n{exc}\n\n"
+                "You can install it by hand from the release page.")
+            return
+        finally:
+            progress.close()
+
+        answer = QMessageBox.question(
+            self, "Install now?",
+            f"{__app_name__} {release.version} has been downloaded.<br><br>"
+            "The installer needs to replace the running program, so KhervePY "
+            "will close.<br><br>Save any work first — close now and install?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes)
+        if answer != QMessageBox.StandardButton.Yes:
+            self._status(f"Installer saved to {path}")
+            return
+        if not updater.launch_installer(path):
+            QMessageBox.warning(
+                self, "Could not start the installer",
+                f"The download is at:\n{path}\n\nRun it by hand to update.")
+            return
+        self.close()
 
     def about(self) -> None:
         QMessageBox.about(

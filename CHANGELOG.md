@@ -3,6 +3,27 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.36.0 — 2026-07-29
+
+### Added
+- **Auto-updater.** KhervePY now checks GitHub Releases for a newer version and
+  can install it. New `khervepy/updater.py`, plus **Help ▸ Check for updates…**
+  and a **Check for updates on start-up** toggle.
+- The start-up check is deliberately quiet: it runs on a worker thread three
+  seconds after the window appears, at most once a day, and says nothing at all
+  unless there is something newer. Being offline or rate-limited is not an
+  error worth a dialog.
+- When an update exists the dialog shows the release notes and offers
+  **Download & install**, **Open release page**, **Skip this version** or
+  **Later**. A skipped version is never announced again on start-up, but still
+  appears if the user asks from the menu.
+- Installing downloads the release's `KhervePY-Setup.exe` with a cancellable
+  progress dialog, confirms that KhervePY must close, then launches the
+  installer detached — it has to outlive the process whose files it replaces.
+  Nothing is downloaded or launched without an explicit click.
+- Outside the frozen build there is no installer to run, so only the release
+  page is offered.
+
 ## 0.35.0 — 2026-07-29
 
 ### Changed
