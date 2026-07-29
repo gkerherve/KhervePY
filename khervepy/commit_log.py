@@ -145,11 +145,21 @@ class CommitLog(QWidget):
         self.files_tree.itemDoubleClicked.connect(self._activate_file)
         fp.addWidget(self.files_tree, 1)
         splitter.addWidget(files_panel)
+        self._files_panel = files_panel
 
         splitter.setStretchFactor(0, 4)
         splitter.setStretchFactor(1, 1)
         splitter.setStretchFactor(2, 1)
         layout.addWidget(splitter, 1)
+
+    def set_compact(self, on: bool) -> None:
+        """Compact mode wants the graph and the commit message only.
+
+        The window is a narrow cockpit there; the files-changed list needs the
+        space more than it earns it, and double-clicking a file to open a diff
+        makes no sense with the editor hidden.
+        """
+        self._files_panel.setVisible(not on)
 
     # --- data ------------------------------------------------------------
     def set_repo(self, path: str) -> None:

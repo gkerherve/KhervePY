@@ -150,8 +150,13 @@ class Settings:
     def restore_compact_geometry(self):
         return self._q.value("window/compact_geometry")
 
+    # The key is versioned: a layout saved by an older KhervePY pins the docks
+    # that version put in the cockpit (Terminal on the left), and restoring it
+    # would silently undo the current arrangement. A new key starts clean.
+    _COMPACT_STATE_KEY = "window/compact_state_v2"
+
     def save_compact_state(self, state) -> None:
-        self._q.setValue("window/compact_state", state)
+        self._q.setValue(self._COMPACT_STATE_KEY, state)
 
     def restore_compact_state(self):
-        return self._q.value("window/compact_state")
+        return self._q.value(self._COMPACT_STATE_KEY)

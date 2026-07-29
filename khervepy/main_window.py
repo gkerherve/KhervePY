@@ -1524,7 +1524,7 @@ class MainWindow(QMainWindow):
 
     # --- compact "run & commit" cockpit ----------------------------------
     def enter_compact_mode(self) -> None:
-        """Collapse to a small window: Terminal left, Log (+ commit msg) right."""
+        """Collapse to a small window: Output left, Log + commit message right."""
         if self._compact:
             return
         # Remember the full layout so Maximise can restore it verbatim.
@@ -1542,12 +1542,15 @@ class MainWindow(QMainWindow):
                   self.diff_dock, self.git_dock, self.ai_dock):
             d.hide()
 
-        # Left: Terminal.  Right: Log (commit graph + full commit message).
-        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.terminal_dock)
+        # Left: Output — the cockpit exists to watch a run.  Right: the Log,
+        # whose own splitter puts the commit graph on top and the full commit
+        # message underneath.
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.output_dock)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.log_dock)
-        for d in (self.terminal_dock, self.log_dock):
+        self.commit_log.set_compact(True)
+        for d in (self.output_dock, self.log_dock):
             d.show()
-        self.terminal_dock.raise_()
+        self.output_dock.raise_()
 
         self.compact_toolbar.show()
         # Reuse the size, on-screen position and column split from last time.
@@ -1559,6 +1562,14 @@ class MainWindow(QMainWindow):
             self.resize(1100, 600)
         if cstate is not None:
             self.restoreState(cstate)
+        else:
+            # First time in the cockpit: Qt's default split leaves the Log too
+            # narrow for its graph columns. Split closer to even; the user's own
+            # drag is remembered from then on.
+            self.resizeDocks(
+                [self.output_dock, self.log_dock], [55, 45],
+                Qt.Orientation.Horizontal,
+            )
 
     def exit_compact_mode(self) -> None:
         """Return to the full editor, restoring the pre-compact layout."""
@@ -1568,6 +1579,7 @@ class MainWindow(QMainWindow):
         self.settings.save_compact_geometry(self.saveGeometry())
         self.settings.save_compact_state(self.saveState())
         self._compact = False
+        self.commit_log.set_compact(False)
         self.compact_toolbar.hide()
         self.menuBar().show()
         self.statusBar().show()

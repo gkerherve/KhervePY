@@ -3,6 +3,23 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.35.0 — 2026-07-29
+
+### Changed
+- **Compact ("mini") mode is now Output left, Log right.** The cockpit exists to
+  watch a run and commit the result, so the left column is the Output panel
+  instead of the Terminal. The right column is the Log, whose own splitter puts
+  the commit graph on top and the full commit message underneath.
+- The files-changed list is hidden in compact mode: the window is narrow, and
+  double-clicking a file to open a diff makes no sense with the editor hidden.
+  It returns on Maximise.
+- The first entry into the cockpit splits the two columns roughly evenly rather
+  than leaving the Log too narrow for its graph columns. Any split dragged by
+  hand is remembered as before.
+- The saved compact layout is stored under a new key. A layout saved by an
+  earlier version pins the docks *that* version used (Terminal on the left) and
+  restoring it would silently undo the new arrangement.
+
 ## 0.34.0 — 2026-07-28
 
 ### Fixed
