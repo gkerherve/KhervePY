@@ -17,13 +17,14 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QCheckBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QSplitter,
@@ -35,6 +36,7 @@ from PyQt6.QtWidgets import (
 
 from khervepy import git_backend as gb
 from khervepy.commit_graph import GraphDelegate, build_lanes, max_lanes, _parse_refs
+from khervepy.git_panel import _Worker
 
 # Colour per change status.
 _STATUS_COLOR = {
@@ -78,11 +80,14 @@ class CommitLog(QWidget):
 
     show_commit = pyqtSignal(str)             # full revision hash
     show_commit_file = pyqtSignal(str, str)   # (rev, file)
+    pulled = pyqtSignal()                     # a pull finished successfully
+    status_message = pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.repo_path: str | None = None
         self._rows: list[dict] = []
+        self._threads: list[QThread] = []
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -96,9 +101,15 @@ class CommitLog(QWidget):
         self.all_cb.setChecked(True)
         self.all_cb.toggled.connect(self.refresh)
         top.addWidget(self.all_cb)
-        refresh = QPushButton("Refresh")
-        refresh.clicked.connect(self.refresh)
-        top.addWidget(refresh)
+        # Pull sits next to Refresh: in the cockpit the Git dock is hidden, so
+        # this is the only way to fetch someone else's commits into the graph.
+        self.pull_btn = QPushButton("Pull")
+        self.pull_btn.setToolTip("git pull the current branch, then refresh")
+        self.pull_btn.clicked.connect(self._pull)
+        top.addWidget(self.pull_btn)
+        self.refresh_btn = QPushButton("Refresh")
+        self.refresh_btn.clicked.connect(self.refresh)
+        top.addWidget(self.refresh_btn)
         layout.addLayout(top)
 
         splitter = QSplitter(Qt.Orientation.Vertical)
@@ -172,9 +183,53 @@ class CommitLog(QWidget):
             1, QHeaderView.ResizeMode.Stretch if on
             else QHeaderView.ResizeMode.Interactive)
 
+    # --- pull ------------------------------------------------------------
+    def _pull(self) -> None:
+        """Fetch + merge on a worker thread, then reload the graph.
+
+        The button doubles as the progress indicator — the cockpit has no
+        status bar to report into.
+        """
+        path = self.repo_path
+        if not path:
+            return
+        self.pull_btn.setEnabled(False)
+        self.pull_btn.setText("Pulling…")
+        self.status_message.emit("Pulling…")
+
+        thread = QThread(self)
+        worker = _Worker(lambda: gb.pull(path))
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+
+        def finish():
+            self.pull_btn.setText("Pull")
+            self.pull_btn.setEnabled(True)
+            thread.quit()
+            thread.wait()
+            if thread in self._threads:
+                self._threads.remove(thread)
+
+        def handle_done(_result):
+            finish()
+            self.status_message.emit("Pulled.")
+            self.refresh()
+            self.pulled.emit()
+
+        def handle_fail(msg):
+            finish()
+            self.status_message.emit(msg)
+            QMessageBox.warning(self, "Pull failed", msg)
+
+        worker.done.connect(handle_done)
+        worker.failed.connect(handle_fail)
+        self._threads.append(thread)
+        thread.start()
+
     # --- data ------------------------------------------------------------
     def set_repo(self, path: str) -> None:
         self.repo_path = path if path and gb.is_repo(path) else None
+        self.pull_btn.setEnabled(self.repo_path is not None)
         self.refresh()
 
     def refresh(self) -> None:

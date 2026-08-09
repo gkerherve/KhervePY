@@ -3,6 +3,24 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.40.0 — 2026-08-09
+
+### Added
+- **Pull button in the Log panel**, next to Refresh. The commit graph is the
+  panel you look at to see what is on the branch, and in the mini window the
+  Git dock is hidden entirely — so there was no way to fetch someone else's
+  commits without restoring the full window. The pull runs on a worker thread,
+  the button reads "Pulling…" while it does (the cockpit has no status bar),
+  and both the graph and the staging list refresh when it lands.
+
+### Changed
+- **Commit + Push now opens a real, resizable dialog** instead of a one-line
+  input box, so a message can have a summary line, a blank line and a body.
+  Ctrl+Enter commits; the header says which branch and how many changes are
+  about to go up.
+- **The Git dock's commit box grew** from a fixed two-line strip to a box with
+  a 96px minimum that stretches with the dock.
+
 ## 0.39.0 — 2026-07-29
 
 ### Added

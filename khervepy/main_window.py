@@ -46,7 +46,7 @@ from khervepy.search_dock import SearchDock
 from khervepy.terminal import Terminal
 from khervepy.debugger import Debugger
 from khervepy.diff_viewer import DiffViewer
-from khervepy.git_panel import GitPanel
+from khervepy.git_panel import CommitMessageDialog, GitPanel
 from khervepy.package_manager import PackageManager
 from khervepy.ai_chat import AIChat
 from khervepy.settings import Settings
@@ -166,6 +166,10 @@ class MainWindow(QMainWindow):
         self.commit_log = CommitLog()
         self.commit_log.show_commit.connect(self.show_commit_diff)
         self.commit_log.show_commit_file.connect(self.show_commit_file_diff)
+        self.commit_log.status_message.connect(self._status)
+        # A pull changes the working tree: the staging list and file tree are
+        # now stale even though the graph refreshed itself.
+        self.commit_log.pulled.connect(self.git_panel.refresh)
         log_dock = QDockWidget("Log", self)
         log_dock.setObjectName("log_dock")
         log_dock.setWidget(self.commit_log)
@@ -1514,12 +1518,18 @@ class MainWindow(QMainWindow):
             w = self.tabs.widget(i)
             if isinstance(w, CodeEditor) and w.isModified() and w.path:
                 w.save()
-        msg, ok = QInputDialog.getText(self, "Commit + Push", "Commit message:")
-        if not ok or not msg.strip():
+        try:
+            st = gb.status(self.project_root)
+            n = len(st.staged) + len(st.unstaged) + len(st.untracked)
+            subtitle = f"On {st.branch} · {n} change(s) will be staged and pushed."
+        except gb.GitError:
+            subtitle = ""
+        msg, ok = CommitMessageDialog.ask(self, "Commit + Push", subtitle)
+        if not ok or not msg:
             return
         try:
             gb.stage_all(self.project_root)
-            gb.commit(self.project_root, msg.strip())
+            gb.commit(self.project_root, msg)
         except gb.GitError as exc:
             QMessageBox.warning(self, "Commit failed", str(exc))
             self.git_panel.refresh()

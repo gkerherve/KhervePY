@@ -16,8 +16,11 @@ from __future__ import annotations
 import os
 
 from PyQt6.QtCore import QObject, Qt, QThread, pyqtSignal
+from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -31,6 +34,55 @@ from PyQt6.QtWidgets import (
 )
 
 from khervepy import git_backend as gb
+
+
+class CommitMessageDialog(QDialog):
+    """Multi-line commit-message prompt.
+
+    ``QInputDialog.getText`` gives a single line, which is no use for the
+    subject + blank line + body shape a real commit message wants.
+    """
+
+    def __init__(self, parent=None, title: str = "Commit", subtitle: str = ""):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setSizeGripEnabled(True)
+        self.resize(620, 340)
+
+        layout = QVBoxLayout(self)
+        if subtitle:
+            label = QLabel(subtitle)
+            label.setWordWrap(True)
+            layout.addWidget(label)
+        self.editor = QPlainTextEdit()
+        self.editor.setPlaceholderText(
+            "Summary line\n\nOptional body — as many lines as you like."
+        )
+        layout.addWidget(self.editor, 1)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok
+            | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+        # Enter inserts a newline in the editor, so give the keyboard an
+        # explicit way to commit.
+        for seq in ("Ctrl+Return", "Ctrl+Enter"):
+            QShortcut(QKeySequence(seq), self, activated=self.accept)
+        self.editor.setFocus()
+
+    def message(self) -> str:
+        return self.editor.toPlainText().strip()
+
+    @staticmethod
+    def ask(parent, title: str = "Commit", subtitle: str = "") -> tuple[str, bool]:
+        """Return ``(message, accepted)`` — mirrors ``QInputDialog.getText``."""
+        dlg = CommitMessageDialog(parent, title, subtitle)
+        ok = dlg.exec() == QDialog.DialogCode.Accepted
+        return dlg.message(), ok
 
 
 class _Worker(QObject):
@@ -89,7 +141,7 @@ class GitPanel(QWidget):
         self.files.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
         self.files.itemDoubleClicked.connect(self._request_diff)
         self.files.setToolTip("Double-click a file to view its diff")
-        layout.addWidget(self.files, 1)
+        layout.addWidget(self.files, 2)
 
         stage_row = QHBoxLayout()
         self.stage_btn = QPushButton("Stage")
@@ -103,11 +155,15 @@ class GitPanel(QWidget):
         stage_row.addWidget(self.refresh_btn)
         layout.addLayout(stage_row)
 
-        # Commit message + button.
+        # Commit message + button. A fixed 60px box only ever showed two
+        # lines; give it room for a subject + body and let it grow with the
+        # dock.
         self.message = QPlainTextEdit()
-        self.message.setPlaceholderText("Commit message…")
-        self.message.setFixedHeight(60)
-        layout.addWidget(self.message)
+        self.message.setPlaceholderText(
+            "Commit message…  (summary, blank line, then details)"
+        )
+        self.message.setMinimumHeight(96)
+        layout.addWidget(self.message, 1)
 
         self.commit_btn = QPushButton("Commit")
         self.commit_btn.clicked.connect(self._commit)
