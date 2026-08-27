@@ -3,6 +3,19 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.40.1 — 2026-08-27
+
+### Fixed
+- **The Log panel's columns can be resized again.** In the mini window the
+  Description column was set to stretch, and a stretching column refuses to be
+  dragged — so its divider (and, in practice, the whole header) felt dead.
+  Every column is interactive now: drag any divider, in either window.
+- **A dragged column width sticks.** Refreshing the graph used to recompute the
+  Graph column, and switching between the full window and the cockpit reset the
+  lot. Widths are remembered per window mode and saved between sessions; until
+  you drag one, Description still grows to fill the leftover room by itself.
+  Right-click the header for "Reset column widths".
+
 ## 0.40.0 — 2026-08-09
 
 ### Added

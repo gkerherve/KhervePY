@@ -17,13 +17,14 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtCore import QEvent, Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QCheckBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QMenu,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
@@ -83,11 +84,24 @@ class CommitLog(QWidget):
     pulled = pyqtSignal()                     # a pull finished successfully
     status_message = pyqtSignal(str)
 
-    def __init__(self, parent=None):
+    # Column widths used until the user drags a divider, per window mode:
+    # (Graph, Description, Date, Author).
+    _DEFAULT_WIDTHS = (90, 300, 110, 120)
+    _COMPACT_WIDTHS = (55, 200, 78, 120)
+
+    def __init__(self, settings=None, parent=None):
         super().__init__(parent)
+        self.settings = settings
         self.repo_path: str | None = None
         self._rows: list[dict] = []
         self._threads: list[QThread] = []
+        self._compact = False
+        # Dragged widths per mode (False = full window, True = cockpit); an
+        # empty list means "still automatic".
+        self._widths: dict[bool, list[int]] = {}
+        # Set while *we* resize a column, so our own tidying is not mistaken
+        # for the user pinning a width.
+        self._applying = False
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -119,18 +133,23 @@ class CommitLog(QWidget):
         self.tree.setRootIsDecorated(False)
         self.tree.setUniformRowHeights(True)
         self.tree.setHeaderLabels(["Graph", "Description", "Date", "Author"])
-        self.tree.setColumnWidth(0, 90)
         self.tree.itemDoubleClicked.connect(self._activate_commit)
         self.tree.currentItemChanged.connect(self._on_commit_selected)
         self._delegate = GraphDelegate(lambda: self._rows, self.tree)
         self.tree.setItemDelegate(self._delegate)
         header = self.tree.header()
-        # Interactive on every column so the user can drag the dividers.
+        # Interactive on every column — including the last one — so every
+        # divider can be dragged. A Stretch section refuses to be resized,
+        # which is what used to lock the Description column.
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         header.setStretchLastSection(False)
-        self.tree.setColumnWidth(1, 300)  # Description
-        self.tree.setColumnWidth(2, 110)  # Date
-        self.tree.setColumnWidth(3, 120)  # Author
+        header.setMinimumSectionSize(24)
+        header.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        header.customContextMenuRequested.connect(self._header_menu)
+        header.sectionResized.connect(self._on_section_resized)
+        self._apply_widths()
+        # Description soaks up spare room until the user has an opinion.
+        self.tree.viewport().installEventFilter(self)
         splitter.addWidget(self.tree)
 
         # Full commit message (middle) — the graph's Description column is
@@ -163,6 +182,81 @@ class CommitLog(QWidget):
         splitter.setStretchFactor(2, 1)
         layout.addWidget(splitter, 1)
 
+    # --- column widths ---------------------------------------------------
+    def _saved_widths(self) -> list[int]:
+        """Widths the user dragged for the current mode ([] while automatic)."""
+        if self._compact not in self._widths:
+            self._widths[self._compact] = (
+                self.settings.log_columns(self._compact)
+                if self.settings is not None else []
+            )
+        return self._widths[self._compact]
+
+    def _apply_widths(self) -> None:
+        """Restore the current mode's widths — dragged ones, else defaults."""
+        widths = self._saved_widths() or (
+            self._COMPACT_WIDTHS if self._compact else self._DEFAULT_WIDTHS)
+        self._applying = True
+        for idx, width in enumerate(widths):
+            if width > 0:
+                self.tree.setColumnWidth(idx, int(width))
+        self._applying = False
+        self._fit_description()
+
+    def _fit_description(self) -> None:
+        """Grow Description into the leftover width, while it is automatic."""
+        if self._saved_widths():
+            return
+        avail = self.tree.viewport().width()
+        if avail <= 0:
+            return
+        others = sum(self.tree.columnWidth(i) for i in (0, 2, 3))
+        want = avail - others
+        if want > 120 and want != self.tree.columnWidth(1):
+            self._applying = True
+            self.tree.setColumnWidth(1, want)
+            self._applying = False
+
+    def _on_section_resized(self, _index: int, old: int, new: int) -> None:
+        """A drag on any divider pins every column for this mode, for good."""
+        if self._applying or old <= 0 or new <= 0:
+            # ``old``/``new`` of 0 is a column being hidden or shown (the
+            # cockpit hides Author), not somebody dragging a divider.
+            return
+        previous = self._widths.get(self._compact) or []
+        widths = []
+        for idx in range(self.tree.columnCount()):
+            width = self.tree.columnWidth(idx)
+            if width <= 0:                     # hidden column: keep its width
+                width = previous[idx] if idx < len(previous) else 0
+            widths.append(width)
+        self._widths[self._compact] = widths
+        if self.settings is not None:
+            self.settings.set_log_columns(self._compact, widths)
+
+    def _header_menu(self, pos) -> None:
+        """Right-click the header — the way back out of a bad drag."""
+        menu = QMenu(self)
+        reset = menu.addAction("Reset column widths")
+        if menu.exec(self.tree.header().mapToGlobal(pos)) is not reset:
+            return
+        self._widths[self._compact] = []
+        if self.settings is not None:
+            self.settings.set_log_columns(self._compact, [])
+        self._applying = True
+        defaults = (self._COMPACT_WIDTHS if self._compact
+                    else self._DEFAULT_WIDTHS)
+        for idx, width in enumerate(defaults):
+            self.tree.setColumnWidth(idx, width)
+        self._applying = False
+        self._fit_description()
+
+    def eventFilter(self, obj, event):
+        if (obj is self.tree.viewport()
+                and event.type() == QEvent.Type.Resize):
+            self._fit_description()
+        return super().eventFilter(obj, event)
+
     def set_compact(self, on: bool) -> None:
         """Strip the panel down for the small cockpit window.
 
@@ -170,18 +264,17 @@ class CommitLog(QWidget):
         double-clicking a file to open a diff makes no sense with the editor
         hidden. The Author column goes too — a solo repo has one — and the
         remaining columns tighten so the Description keeps the room.
+
+        Each mode remembers its own column widths, so tightening the cockpit
+        does not disturb the full window's layout.
         """
+        self._compact = on
         self._files_panel.setVisible(not on)
         self.summary.setVisible(not on)
+        self._applying = True
         self.tree.setColumnHidden(3, on)          # Author
-        self.tree.setColumnWidth(0, 55 if on else 90)    # Graph
-        self.tree.setColumnWidth(2, 78 if on else 110)   # Date
-        header = self.tree.header()
-        # With Author gone the Description should take up the slack.
-        header.setStretchLastSection(False)
-        header.setSectionResizeMode(
-            1, QHeaderView.ResizeMode.Stretch if on
-            else QHeaderView.ResizeMode.Interactive)
+        self._applying = False
+        self._apply_widths()
 
     # --- pull ------------------------------------------------------------
     def _pull(self) -> None:
@@ -247,13 +340,19 @@ class CommitLog(QWidget):
             return
 
         self._rows = build_lanes(commits)
-        # Graph column holds rails + small ref dots, so it stays narrow.
-        lanes_px = max_lanes(self._rows) * GraphDelegate.LANE_W
-        dots_px = max(
-            (self._delegate.refs_span(row["commit"]) for row in self._rows),
-            default=0,
-        )
-        self.tree.setColumnWidth(0, lanes_px + dots_px + 14)
+        # Graph column holds rails + small ref dots, so it stays narrow — but
+        # only while it is automatic; a width the user dragged survives a
+        # refresh.
+        if not self._saved_widths():
+            lanes_px = max_lanes(self._rows) * GraphDelegate.LANE_W
+            dots_px = max(
+                (self._delegate.refs_span(row["commit"]) for row in self._rows),
+                default=0,
+            )
+            self._applying = True
+            self.tree.setColumnWidth(0, lanes_px + dots_px + 14)
+            self._applying = False
+            self._fit_description()
 
         for row in self._rows:
             c = row["commit"]

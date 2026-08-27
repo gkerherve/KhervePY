@@ -97,6 +97,26 @@ class Settings:
     def github_user(self, value: str) -> None:
         self._q.setValue("github/user", value)
 
+    # --- Log panel columns -----------------------------------------------
+    def log_columns(self, compact: bool) -> list[int]:
+        """Column widths the user dragged in the Log panel, per window mode.
+
+        Empty means "never dragged", so the panel keeps sizing them itself.
+        """
+        raw = self._q.value(self._log_columns_key(compact), [], type=list) or []
+        try:
+            return [int(w) for w in raw]
+        except (TypeError, ValueError):
+            return []
+
+    def set_log_columns(self, compact: bool, widths: list[int]) -> None:
+        self._q.setValue(self._log_columns_key(compact),
+                         [int(w) for w in widths])
+
+    @staticmethod
+    def _log_columns_key(compact: bool) -> str:
+        return f"log/columns_{'compact' if compact else 'full'}"
+
     # --- recent projects -------------------------------------------------
     def recent_projects(self) -> list[str]:
         return self._q.value("recent/projects", [], type=list) or []

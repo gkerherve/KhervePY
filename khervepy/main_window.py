@@ -163,7 +163,7 @@ class MainWindow(QMainWindow):
         self.git_dock = git_dock
 
         # Commit history / Log (right, tabbed with the Git panel).
-        self.commit_log = CommitLog()
+        self.commit_log = CommitLog(self.settings)
         self.commit_log.show_commit.connect(self.show_commit_diff)
         self.commit_log.show_commit_file.connect(self.show_commit_file_diff)
         self.commit_log.status_message.connect(self._status)
