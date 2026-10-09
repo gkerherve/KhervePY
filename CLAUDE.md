@@ -52,6 +52,12 @@ khervepy/
   updater.py           GitHub release check + installer download
   ai_backend.py        multi-provider AI API (Claude/OpenAI/Mistral/Ollama)
   ai_chat.py           AI assistant dock (chat, model refresh, key dialog)
+  terminal.py          Terminal: PtyTerminal (macOS/Linux) or PipeTerminal (Windows)
+  pty_terminal.py      PTY + pyte VT emulator, painted by a QAbstractScrollArea
+  run_config.py        RunConfig + command building (no Qt)
+  run_dialogs.py       interpreter picker, run-configuration editor
+  fonts.py             the one monospace-font picker (never pass QFont a CSS list)
+  secrets.py           OS keychain via keyring (GitHub token, AI keys)
   settings.py          QSettings façade
 ```
 

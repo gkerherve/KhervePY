@@ -1,9 +1,13 @@
 """An integrated terminal dock backed by a persistent shell process.
 
-This is a line-oriented terminal (a real PTY is out of scope for a lightweight
-IDE): it runs an interactive shell via ``QProcess`` and pipes typed commands to
-its stdin, streaming merged stdout/stderr into the same view. Standard
-commands, git, pip and scripts work; full-screen/curses programs do not.
+On macOS and Linux ``Terminal`` is the real thing — a shell on a pseudo-
+terminal drawn by a VT emulator (``pty_terminal.py``), so ``claude``,
+``python -i``, ``vim``, colours and Ctrl-C behave as in Terminal.app.
+
+On Windows it is ``PipeTerminal``, defined here: a line-oriented terminal that
+runs an interactive shell via ``QProcess`` and pipes typed commands to its
+stdin, streaming merged stdout/stderr into the same view. Standard commands,
+git, pip and scripts work; full-screen/curses programs do not.
 
 You type directly into the console view, as in a real terminal: text is
 editable only after the point where the shell's last output ended, so the
@@ -156,8 +160,8 @@ class _Console(QPlainTextEdit):
         super().keyPressEvent(event)
 
 
-class Terminal(QWidget):
-    """Persistent shell in a dockable widget."""
+class PipeTerminal(QWidget):
+    """Persistent shell in a dockable widget (pipe-based; used on Windows)."""
 
     def __init__(self, cwd: str | None = None, parent=None):
         super().__init__(parent)
@@ -172,9 +176,8 @@ class Terminal(QWidget):
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(3)
 
-        mono = QFont("Consolas")
-        mono.setStyleHint(QFont.StyleHint.Monospace)
-        mono.setPointSize(10)
+        from khervepy.fonts import mono_font
+        mono = mono_font(10)
 
         self.view = _Console(self.send_command)
         self.view.setFont(mono)
@@ -276,3 +279,12 @@ class Terminal(QWidget):
         if os.name == "nt":
             return f'"{path}"'
         return "'" + path.replace("'", "'\\''") + "'"
+
+
+if os.name == "nt":
+    Terminal = PipeTerminal
+else:
+    try:
+        from khervepy.pty_terminal import PtyTerminal as Terminal
+    except ImportError:  # pyte missing: degrade to the pipe terminal, don't crash
+        Terminal = PipeTerminal

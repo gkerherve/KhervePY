@@ -11,6 +11,7 @@ the Free Software Foundation, either version 3 of the License, or
 from __future__ import annotations
 
 import os
+import sys
 
 from PyQt6.QtCore import Qt, QSize, QThread, QTimer
 from PyQt6.QtGui import QAction, QKeySequence
@@ -19,12 +20,14 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QDockWidget,
     QFileDialog,
+    QHBoxLayout,
     QInputDialog,
     QLabel,
     QMainWindow,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QSplitter,
     QTabWidget,
     QToolBar,
     QVBoxLayout,
@@ -35,7 +38,7 @@ from PyQt6.QtGui import QColor, QIcon
 
 from khervepy import __app_name__, __version__, git_backend as gb
 from khervepy import icons
-from khervepy.editor import CodeEditor
+from khervepy.editor import BinaryFile, CodeEditor, FileTooLarge
 from khervepy.file_tree import FileTree
 from khervepy.git_panel import _Worker
 from khervepy.github_dialog import TokenDialog
@@ -49,6 +52,8 @@ from khervepy.diff_viewer import DiffViewer
 from khervepy.git_panel import CommitMessageDialog, GitPanel
 from khervepy.package_manager import PackageManager
 from khervepy.ai_chat import AIChat
+from khervepy import run_config as rc
+from khervepy.run_config import RunConfig
 from khervepy.settings import Settings
 from khervepy.themes import (
     DEFAULT_THEME,
@@ -56,6 +61,23 @@ from khervepy.themes import (
     theme_names,
     window_stylesheet,
 )
+
+
+# macOS: Qt's "Ctrl" is the Cmd key, and a few of our shortcuts collide with
+# system-wide ones — Cmd+H hides the app, Cmd+M minimises, Cmd+` cycles windows.
+# Those get a Mac-conventional alternative; everything else is unchanged.
+_IS_MAC = sys.platform == "darwin"
+_MAC_REMAP = {"Ctrl+H": "Ctrl+Alt+F", "Ctrl+M": "Ctrl+Alt+M", "Ctrl+`": "Meta+`"}
+
+
+def _ks(seq: str) -> QKeySequence:
+    """QKeySequence for *seq*, remapped where macOS reserves it."""
+    return QKeySequence(_MAC_REMAP.get(seq, seq) if _IS_MAC else seq)
+
+
+def _native(seq: str) -> str:
+    """How the shortcut reads on this platform (⌘⌥F on a Mac, Ctrl+Alt+F elsewhere)."""
+    return _ks(seq).toString(QKeySequence.SequenceFormat.NativeText)
 
 
 def _decode(data) -> str:
@@ -73,6 +95,8 @@ class MainWindow(QMainWindow):
         self._running = False  # a script is executing under the Run button
         self._killed = False   # the last run was stopped by the user
         self._compact = False  # compact "run & commit" cockpit is active
+        self._run_configs: list[RunConfig] = rc.builtin_configs()
+        self._last_run_cfg: RunConfig | None = None
 
         self.setWindowTitle(f"{__app_name__} {__version__}")
         self.resize(1200, 780)
@@ -101,11 +125,16 @@ class MainWindow(QMainWindow):
         target = initial_path or self.settings.last_project
         if target and os.path.exists(target):
             self.open_path(target)
+            if not os.path.isdir(target):
+                # A file was opened, so set_project_root never ran: the run
+                # configurations and interpreter still have to be loaded.
+                self._load_project_run_state()
         else:
             self.set_project_root(self.project_root)
         # Reopen the editor tabs from the previous session.
         self._restore_open_files()
         self._setup_vcs()
+        self._setup_file_watch()
         # Look for a new release once the window is up, so a slow or dead
         # network never delays the editor appearing.
         QTimer.singleShot(3000, self._auto_check_updates)
@@ -120,12 +149,38 @@ class MainWindow(QMainWindow):
         self.tabs.currentChanged.connect(self._on_tab_changed)
 
         # The centre stacks the editor tabs above a hideable find/replace bar.
-        self.find_bar = FindBar(self.current_editor)
+        self.find_bar = FindBar(self.focused_editor)
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        layout.addWidget(self.tabs, 1)
+        # Tabs on the left; a second view of the same buffer can open beside them.
+        self._editor_split = QSplitter(Qt.Orientation.Horizontal)
+        self._editor_split.setChildrenCollapsible(False)
+        self._editor_split.addWidget(self.tabs)
+        self._split_editor: CodeEditor | None = None
+        self._split_source: CodeEditor | None = None
+        self._split_pane = QWidget()
+        pane_layout = QVBoxLayout(self._split_pane)
+        pane_layout.setContentsMargins(0, 0, 0, 0)
+        pane_layout.setSpacing(0)
+        head = QWidget()
+        head_row = QHBoxLayout(head)
+        head_row.setContentsMargins(8, 2, 4, 2)
+        self._split_title = QLabel()
+        head_row.addWidget(self._split_title, 1)
+        close_btn = QPushButton("×")
+        close_btn.setFixedWidth(26)
+        close_btn.setToolTip("Close the split")
+        close_btn.clicked.connect(self.close_split)
+        head_row.addWidget(close_btn)
+        pane_layout.addWidget(head)
+        self._split_holder = QVBoxLayout()
+        self._split_holder.setContentsMargins(0, 0, 0, 0)
+        pane_layout.addLayout(self._split_holder, 1)
+        self._split_pane.hide()
+        self._editor_split.addWidget(self._split_pane)
+        layout.addWidget(self._editor_split, 1)
         layout.addWidget(self.find_bar)
         self._central = container
         self.setCentralWidget(container)
@@ -258,8 +313,8 @@ class MainWindow(QMainWindow):
             act.triggered.connect(slot)
             label = tip or text
             if shortcut:
-                act.setShortcut(QKeySequence(shortcut))
-                label = f"{label}  ({shortcut})"
+                act.setShortcut(_ks(shortcut))
+                label = f"{label}  ({_native(shortcut)})"
             act.setToolTip(label)
             tb.addAction(act)
             return act
@@ -269,12 +324,21 @@ class MainWindow(QMainWindow):
         add("new", "New", self.new_file, "Ctrl+N")
         add("save", "Save", self.save_current, "Ctrl+S")
         tb.addSeparator()
-        self.run_action = add("run", "Run", self.run_current, "F5",
-                              "Run the current Python file")
+        self.run_action = add("run", "Run", self.run_selected, "F5",
+                              "Run the selected run configuration")
         self.stop_action = add("stop", "Stop", self.stop_run, "Ctrl+F2",
                                "Stop the running program")
         add("debug", "Debug", self.debug_current, "Shift+F5",
             "Debug the current Python file")
+        # Which run configuration the Run button (F5) launches.
+        self.run_box = QComboBox()
+        self.run_box.setToolTip("Run configuration — Run ▸ Edit Run Configurations…")
+        self.run_box.setMinimumContentsLength(14)
+        self.run_box.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.run_box.activated.connect(self._on_run_config_picked)
+        tb.addWidget(self.run_box)
+        self._refresh_run_box(rc.CURRENT_FILE)
         self._update_run_icons()  # paint idle Run/Stop state
         add("terminal", "Terminal", self.focus_terminal, "Ctrl+`",
             "Show the integrated terminal")
@@ -342,7 +406,7 @@ class MainWindow(QMainWindow):
             return act
 
         add("open_folder", "Open Folder", self.open_folder_dialog,
-            "Open a project folder  (Ctrl+K)")
+            f"Open a project folder  ({_native('Ctrl+K')})")
         add("new_instance", "New Instance", self.new_instance,
             "Launch a second KhervePY window")
         ct.addSeparator()
@@ -371,6 +435,7 @@ class MainWindow(QMainWindow):
         file_menu.addAction("New Python File…", self.new_python_file)
         file_menu.addAction("Save", self.save_current)
         file_menu.addAction("Save As…", self.save_current_as)
+        file_menu.addAction("Reload from Disk", self.reload_current_from_disk)
         file_menu.addSeparator()
         file_menu.addAction("Open File Location", self.open_file_location)
         file_menu.addSeparator()
@@ -380,37 +445,44 @@ class MainWindow(QMainWindow):
         file_menu.addAction("Quit", self.close)
 
         edit_menu = bar.addMenu("&Edit")
-        edit_menu.addAction("Find…", QKeySequence("Ctrl+F"),
+        edit_menu.addAction("Find…", _ks("Ctrl+F"),
                             lambda: self.find_bar.open(replace=False))
-        edit_menu.addAction("Replace…", QKeySequence("Ctrl+H"),
+        edit_menu.addAction("Replace…", _ks("Ctrl+H"),
                             lambda: self.find_bar.open(replace=True))
-        edit_menu.addAction("Find in Files…", QKeySequence("Ctrl+Shift+F"),
+        edit_menu.addAction("Find in Files…", _ks("Ctrl+Shift+F"),
                             self.find_in_files)
 
         code_menu = bar.addMenu("&Code")
-        code_menu.addAction("Comment with Line Comment", QKeySequence("Ctrl+/"),
+        code_menu.addAction("Comment with Line Comment", _ks("Ctrl+/"),
                             lambda: self._code_action("toggle_line_comment"))
         code_menu.addAction("Comment with Block Comment",
-                            QKeySequence("Ctrl+Shift+/"),
+                            _ks("Ctrl+Shift+/"),
                             lambda: self._code_action("toggle_block_comment"))
         code_menu.addSeparator()
-        code_menu.addAction("Duplicate Line/Selection", QKeySequence("Ctrl+D"),
+        code_menu.addAction("Duplicate Line/Selection", _ks("Ctrl+D"),
                             lambda: self._code_action("duplicate_line"))
-        code_menu.addAction("Delete Line", QKeySequence("Ctrl+Shift+K"),
+        code_menu.addAction("Delete Line", _ks("Ctrl+Shift+K"),
                             lambda: self._code_action("delete_line"))
-        code_menu.addAction("Move Line Up", QKeySequence("Alt+Shift+Up"),
+        code_menu.addAction("Move Line Up", _ks("Alt+Shift+Up"),
                             lambda: self._code_action("move_line_up"))
-        code_menu.addAction("Move Line Down", QKeySequence("Alt+Shift+Down"),
+        code_menu.addAction("Move Line Down", _ks("Alt+Shift+Down"),
                             lambda: self._code_action("move_line_down"))
         code_menu.addSeparator()
-        code_menu.addAction("Collapse/Expand", QKeySequence("Ctrl+."),
+        code_menu.addAction("Add Next Occurrence (multi-cursor)", _ks("Ctrl+J"),
+                            lambda: self._code_action("add_next_occurrence"))
+        code_menu.addAction("Select All Occurrences", _ks("Ctrl+Shift+L"),
+                            lambda: self._code_action("select_all_occurrences"))
+        code_menu.addAction("Split Editor Right", _ks("Ctrl+Alt+\\"), self.split_editor)
+        code_menu.addAction("Close Split", self.close_split)
+        code_menu.addSeparator()
+        code_menu.addAction("Collapse/Expand", _ks("Ctrl+."),
                             lambda: self._code_action("toggle_fold"))
-        code_menu.addAction("Collapse All", QKeySequence("Ctrl+Shift+-"),
+        code_menu.addAction("Collapse All", _ks("Ctrl+Shift+-"),
                             lambda: self._code_action("fold_all"))
-        code_menu.addAction("Expand All", QKeySequence("Ctrl+Shift+="),
+        code_menu.addAction("Expand All", _ks("Ctrl+Shift+="),
                             lambda: self._code_action("unfold_all"))
         code_menu.addSeparator()
-        code_menu.addAction("Go to Line…", QKeySequence("Ctrl+G"),
+        code_menu.addAction("Go to Line…", _ks("Ctrl+G"),
                             self._go_to_line)
 
         view_menu = bar.addMenu("&View")
@@ -424,8 +496,8 @@ class MainWindow(QMainWindow):
         view_menu.addSeparator()
         self.menubar_action = QAction("Menu Bar", self, checkable=True)
         self.menubar_action.setChecked(True)
-        self.menubar_action.setShortcut(QKeySequence("Ctrl+M"))
-        self.menubar_action.setToolTip("Show/hide the menu bar (Ctrl+M)")
+        self.menubar_action.setShortcut(_ks("Ctrl+M"))
+        self.menubar_action.setToolTip(f"Show/hide the menu bar ({_native('Ctrl+M')})")
         self.menubar_action.toggled.connect(self._toggle_menubar)
         view_menu.addAction(self.menubar_action)
         # Also a window-level action so Ctrl+M works while the bar is hidden.
@@ -444,8 +516,15 @@ class MainWindow(QMainWindow):
         gh_menu.addAction("Commit + Push", self.quick_commit_push)
 
         run_menu = bar.addMenu("&Run")
+        run_menu.addAction("Run", self.run_selected)
         run_menu.addAction("Run current file", self.run_current)
+        run_menu.addAction("Run current file in Terminal", self.run_current_in_terminal)
+        run_menu.addAction("Run tests (pytest)", self.run_tests)
+        run_menu.addAction("Edit Run Configurations…", self.edit_run_configs)
+        run_menu.addSeparator()
         run_menu.addAction("Debug current file", self.debug_current)
+        run_menu.addSeparator()
+        run_menu.addAction("Select Python Interpreter…", self.choose_interpreter)
         run_menu.addAction("Environments & Packages…", self.open_package_manager)
         run_menu.addAction("Check requirements.txt…", self.check_requirements)
 
@@ -468,7 +547,7 @@ class MainWindow(QMainWindow):
         self.menuBar().setVisible(visible)
         self.settings.menubar_visible = visible
         if not visible:
-            self._status("Menu bar hidden — press Ctrl+M to show it again.")
+            self._status(f"Menu bar hidden — press {_native('Ctrl+M')} to show it again.")
 
     def _build_statusbar(self) -> None:
         self.statusBar().showMessage(f"{__app_name__} {__version__} — ready")
@@ -479,6 +558,26 @@ class MainWindow(QMainWindow):
         self.gh_indicator.setCursor(Qt.CursorShape.PointingHandCursor)
         self.gh_indicator.clicked.connect(self.set_github_token)
         self.statusBar().addPermanentWidget(self.gh_indicator)
+        # Line ending and encoding of the active file (click to change).
+        self.eol_indicator = QPushButton()
+        self.eol_indicator.setFlat(True)
+        self.eol_indicator.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.eol_indicator.setToolTip("Line endings — click to change")
+        self.eol_indicator.clicked.connect(self._pick_eol)
+        self.statusBar().addPermanentWidget(self.eol_indicator)
+        self.enc_indicator = QPushButton()
+        self.enc_indicator.setFlat(True)
+        self.enc_indicator.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.enc_indicator.setToolTip("File encoding — click to change how it is saved")
+        self.enc_indicator.clicked.connect(self._pick_encoding)
+        self.statusBar().addPermanentWidget(self.enc_indicator)
+        # Which Python the project runs with (click to change).
+        self.interp_indicator = QPushButton()
+        self.interp_indicator.setFlat(True)
+        self.interp_indicator.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.interp_indicator.setToolTip("Python interpreter for this project — click to change")
+        self.interp_indicator.clicked.connect(self.choose_interpreter)
+        self.statusBar().addPermanentWidget(self.interp_indicator)
         self._update_github_indicator()
         # If a token is stored but the user is unknown, verify quietly.
         if self.settings.github_token and not self.settings.github_user:
@@ -538,6 +637,7 @@ class MainWindow(QMainWindow):
         self.commit_log.set_repo(path)
         self.settings.last_project = path
         self.settings.push_recent_project(path)
+        self._load_project_run_state()
         self._rebuild_recent_menu()
         if hasattr(self, "branch_widget"):
             self.branch_widget.refresh()
@@ -578,15 +678,32 @@ class MainWindow(QMainWindow):
             if getattr(w, "path", None) == path:
                 self.tabs.setCurrentIndex(i)
                 return
-        editor = CodeEditor(path, font_size=self.settings.font_size)
+        try:
+            editor = CodeEditor(path, font_size=self.settings.font_size)
+        except FileTooLarge:
+            QMessageBox.information(
+                self, "File too large",
+                f"{os.path.basename(path)} is larger than 40 MB, which KhervePY "
+                "won't load into the editor.\n\nOpen it in the Terminal "
+                "(less, head, tail) instead.")
+            return
+        except BinaryFile:
+            QMessageBox.information(
+                self, "Binary file",
+                f"{os.path.basename(path)} looks like a binary file, not text, so "
+                "it was not opened.")
+            return
         editor.apply_theme(self.settings.theme)
         editor.modificationChanged.connect(self._on_modified)
         editor.textChanged.connect(lambda e=editor: self._autosave(e))
         editor.textChanged.connect(self._schedule_vcs_refresh)
         index = self.tabs.addTab(editor, editor.display_name)
         self.tabs.setCurrentIndex(index)
-        self._update_change_markers(editor)
-        self._status(f"Opened {path}")
+        if not editor.plain:
+            self._update_change_markers(editor)
+        note = " — large file: shown as plain text" if editor.plain else ""
+        self._status(f"Opened {path}{note}")
+        self._watch_editor(editor)
 
     def open_at_line(self, path: str, line: int) -> None:
         """Open ``path`` (if needed) and scroll to ``line`` (1-based)."""
@@ -678,7 +795,14 @@ class MainWindow(QMainWindow):
             return
         self.debugger_dock.show()
         self.debugger_dock.raise_()
-        self.debugger.start(path)
+        # Debug with the selected script configuration's arguments, working
+        # directory and environment, so it behaves like the Run it mirrors.
+        cfg = self._selected_config()
+        if cfg.kind == "script":
+            cmd = rc.build_command(cfg, "", self.project_root, path)
+            self.debugger.start(cmd.args[1], cmd.args[2:], cmd.env, cmd.cwd)
+        else:
+            self.debugger.start(path)
 
     def new_file(self) -> None:
         editor = CodeEditor(None, font_size=self.settings.font_size)
@@ -794,15 +918,62 @@ class MainWindow(QMainWindow):
         w = self.tabs.currentWidget()
         return w if isinstance(w, CodeEditor) else None
 
+    def focused_editor(self) -> CodeEditor | None:
+        """The editor the caret is in: the split view when it has focus, else the tab."""
+        split = self._split_editor
+        if split is not None and split.hasFocus():
+            return split
+        return self.current_editor()
+
+    # --- split editor ----------------------------------------------------
+    def split_editor(self) -> None:
+        """Open a second view of the active file beside the tabs.
+
+        Both views share one document (QScintilla's document pointer), so an
+        edit in either shows in both at once, each with its own caret, scroll
+        position and folding — read the top of a file while editing the bottom.
+        """
+        source = self.current_editor()
+        if source is None:
+            self._status("Open a file to split.")
+            return
+        self.close_split()
+        view = CodeEditor(None, font_size=self.settings.font_size)
+        view.setDocument(source.document())
+        view.path = source.path
+        view.plain = source.plain
+        view.set_lexer_for_path(source.path or "")
+        view.apply_theme(self.settings.theme)
+        view.setCursorPosition(*source.getCursorPosition())
+        self._split_holder.addWidget(view)
+        self._split_editor = view
+        self._split_source = source
+        self._split_title.setText(source.display_name)
+        self._split_pane.show()
+        self._editor_split.setSizes([1, 1])
+        view.setFocus()
+        self._status(f"Split: {source.display_name} (edits show in both views).")
+
+    def close_split(self) -> None:
+        view = self._split_editor
+        if view is None:
+            return
+        self._split_editor = None
+        self._split_source = None
+        self._split_holder.removeWidget(view)
+        view.setParent(None)
+        view.deleteLater()
+        self._split_pane.hide()
+
     # --- Code menu -------------------------------------------------------
     def _code_action(self, method: str) -> None:
         """Dispatch a Code-menu command to the focused editor."""
-        editor = self.current_editor()
+        editor = self.focused_editor()
         if editor is not None:
             getattr(editor, method)()
 
     def _go_to_line(self) -> None:
-        editor = self.current_editor()
+        editor = self.focused_editor()
         if editor is None:
             return
         current = editor.getCursorPosition()[0] + 1
@@ -821,6 +992,8 @@ class MainWindow(QMainWindow):
         if not editor.path:
             self.save_current_as()
             return
+        if self._resolve_conflict(editor) != "save":
+            return
         try:
             editor.save()
             self._refresh_tab_title()
@@ -838,10 +1011,14 @@ class MainWindow(QMainWindow):
         )
         if not path:
             return
+        old = editor.path
         try:
             editor.save(path)
             editor.set_lexer_for_path(path)
             editor.apply_theme(self.settings.theme)
+            if old and old != path:
+                self._unwatch_path(old)
+            self._watch_editor(editor)
             self._refresh_tab_title()
             self.git_panel.refresh()
         except OSError as exc:
@@ -851,11 +1028,16 @@ class MainWindow(QMainWindow):
         w = self.tabs.widget(index)
         if isinstance(w, CodeEditor) and w.isModified():
             if w.path:
-                # Auto-save is on for path-backed files: just flush it silently.
-                try:
-                    w.save()
-                except OSError:
-                    pass
+                # Auto-save is on for path-backed files: just flush it — unless
+                # the file changed on disk meanwhile, which needs a decision.
+                decision = self._resolve_conflict(w)
+                if decision == "cancel":
+                    return
+                if decision == "save":
+                    try:
+                        w.save()
+                    except OSError:
+                        pass
             else:
                 answer = QMessageBox.question(
                     self, "Unsaved changes",
@@ -869,6 +1051,11 @@ class MainWindow(QMainWindow):
                 if answer == QMessageBox.StandardButton.Save:
                     self.tabs.setCurrentIndex(index)
                     self.save_current()
+        if isinstance(w, CodeEditor) and w.path:
+            self._unwatch_path(w.path)
+            if getattr(self, "_split_editor", None) is not None and \
+                    getattr(self, "_split_source", None) is w:
+                self.close_split()
         self.tabs.removeTab(index)
 
     def _on_tab_changed(self, index: int) -> None:
@@ -876,10 +1063,212 @@ class MainWindow(QMainWindow):
         if editor:
             lang = os.path.splitext(editor.path or "")[1] or "text"
             self._status(f"{editor.display_name} · {lang}")
-            self._update_change_markers(editor)
+            if not editor.plain:
+                self._update_change_markers(editor)
+        self._update_file_indicators()
+
+    def _update_file_indicators(self) -> None:
+        editor = self.current_editor()
+        for btn in (self.eol_indicator, self.enc_indicator):
+            btn.setVisible(editor is not None)
+        if editor is not None:
+            self.eol_indicator.setText(editor.eol_name)
+            self.enc_indicator.setText(editor.encoding_name)
+
+    def _pick_eol(self) -> None:
+        from PyQt6.QtWidgets import QMenu
+        from khervepy.editor import EOLS
+        editor = self.current_editor()
+        if editor is None:
+            return
+        menu = QMenu(self)
+        for label, eol in EOLS:
+            act = menu.addAction(label)
+            act.setCheckable(True)
+            act.setChecked(eol == editor.eol)
+            act.triggered.connect(lambda _c, e=eol: self._set_eol(e))
+        menu.exec(self.eol_indicator.mapToGlobal(self.eol_indicator.rect().topLeft()))
+
+    def _set_eol(self, eol: str) -> None:
+        editor = self.current_editor()
+        if editor is not None:
+            editor.set_eol(eol)
+            self._update_file_indicators()
+            self._status(f"{editor.display_name}: line endings will be saved as {editor.eol_name}.")
+
+    def _pick_encoding(self) -> None:
+        from PyQt6.QtWidgets import QMenu
+        from khervepy.editor import ENCODINGS
+        editor = self.current_editor()
+        if editor is None:
+            return
+        menu = QMenu(self)
+        for label, codec in ENCODINGS:
+            act = menu.addAction("Save as " + label)
+            act.setCheckable(True)
+            act.setChecked(codec == editor.encoding)
+            act.triggered.connect(lambda _c, c=codec: self._set_encoding(c))
+        menu.exec(self.enc_indicator.mapToGlobal(self.enc_indicator.rect().topLeft()))
+
+    def _set_encoding(self, codec: str) -> None:
+        editor = self.current_editor()
+        if editor is not None:
+            editor.set_encoding(codec)
+            self._update_file_indicators()
+            self._status(f"{editor.display_name}: will be saved as {editor.encoding_name}.")
 
     def _on_modified(self, _modified: bool) -> None:
         self._refresh_tab_title()
+
+    # --- external changes ------------------------------------------------
+    def _setup_file_watch(self) -> None:
+        """Notice files edited outside KhervePY and reload or ask.
+
+        Claude Code, ``git checkout`` and other editors change files under an
+        open tab all day. Three triggers cover every platform's quirks: the
+        OS watcher (instant), the window coming back to the front, and a slow
+        poll (the watcher loses a path whenever a tool saves by replacing the
+        file, which is how most of them do it).
+        """
+        from PyQt6.QtCore import QFileSystemWatcher, QTimer
+
+        self._in_disk_dialog = False
+        self._watcher = QFileSystemWatcher(self)
+        self._watcher.fileChanged.connect(self._on_file_event)
+        for i in range(self.tabs.count()):
+            w = self.tabs.widget(i)
+            if isinstance(w, CodeEditor):
+                self._watch_editor(w)
+        self._disk_timer = QTimer(self)
+        self._disk_timer.setInterval(2500)
+        self._disk_timer.timeout.connect(self._check_all_disk)
+        self._disk_timer.start()
+        app = QApplication.instance()
+        if app is not None:
+            app.applicationStateChanged.connect(self._on_app_state)
+
+    def _on_app_state(self, state) -> None:
+        if state == Qt.ApplicationState.ApplicationActive:
+            self._check_all_disk()
+            self._schedule_vcs_refresh()
+
+    def _watch_editor(self, editor: CodeEditor) -> None:
+        watcher = getattr(self, "_watcher", None)
+        if watcher is not None and editor.path and os.path.isfile(editor.path):
+            if editor.path not in watcher.files():
+                watcher.addPath(editor.path)
+
+    def _unwatch_path(self, path: str) -> None:
+        watcher = getattr(self, "_watcher", None)
+        if watcher is not None and path in watcher.files():
+            watcher.removePath(path)
+
+    def _on_file_event(self, path: str) -> None:
+        from PyQt6.QtCore import QTimer
+        # Let a write-then-rename settle, then re-arm and look.
+        QTimer.singleShot(200, lambda: self._after_file_event(path))
+
+    def _after_file_event(self, path: str) -> None:
+        for i in range(self.tabs.count()):
+            w = self.tabs.widget(i)
+            if isinstance(w, CodeEditor) and w.path == path:
+                self._watch_editor(w)
+        self._check_all_disk()
+
+    def _check_all_disk(self) -> None:
+        for i in range(self.tabs.count()):
+            w = self.tabs.widget(i)
+            if isinstance(w, CodeEditor) and w.path:
+                self._watch_editor(w)
+                self._check_disk(w)
+
+    def _check_disk(self, editor: CodeEditor) -> None:
+        if self._in_disk_dialog:
+            return
+        state = editor.disk_state()
+        if state == "same":
+            return
+        if state == "missing":
+            if not editor._missing_reported:
+                editor._missing_reported = True
+                self._status(f"{editor.display_name} was deleted or moved on disk — "
+                             "kept in the editor; save to recreate it.")
+            return
+        if getattr(editor, "_deferred_sig", None) == editor._stat_sig():
+            return                                   # asked already, user said later
+        if not editor.isModified():
+            editor.reload_from_disk()
+            self._after_reload(editor)
+            self._status(f"Reloaded {editor.display_name} — it changed on disk.")
+        else:
+            self._resolve_conflict(editor)
+
+    def _after_reload(self, editor: CodeEditor) -> None:
+        self._update_file_indicators()
+        self._update_change_markers(editor)
+        self._schedule_vcs_refresh()
+        self.git_panel.refresh()
+
+    def _resolve_conflict(self, editor: CodeEditor) -> str:
+        """Settle "changed on disk AND edited here" before anything is written.
+
+        Returns ``"save"`` (clear to write, either nothing changed on disk or
+        the user chose to keep their version), ``"reloaded"`` (disk version
+        loaded, nothing to write) or ``"cancel"`` (decide later: autosave stays
+        paused for this file until the disk changes again).
+        """
+        if editor.disk_state() != "changed":
+            return "save"
+        if not editor.isModified():
+            editor.reload_from_disk()
+            self._after_reload(editor)
+            return "reloaded"
+        if self._in_disk_dialog:
+            return "cancel"
+        self._in_disk_dialog = True
+        try:
+            box = QMessageBox(self)
+            box.setIcon(QMessageBox.Icon.Warning)
+            box.setWindowTitle("File changed on disk")
+            box.setText(f"<b>{editor.display_name}</b> was changed outside KhervePY, "
+                        "and you have edits here that are not saved over it.")
+            box.setInformativeText("Reload to take the disk version (your edits are "
+                                   "discarded), or keep yours (the disk version is "
+                                   "overwritten when you save).")
+            reload_btn = box.addButton("Reload from disk", QMessageBox.ButtonRole.DestructiveRole)
+            keep_btn = box.addButton("Keep my version", QMessageBox.ButtonRole.AcceptRole)
+            box.addButton("Decide later", QMessageBox.ButtonRole.RejectRole)
+            box.exec()
+            clicked = box.clickedButton()
+        finally:
+            self._in_disk_dialog = False
+        if clicked is reload_btn:
+            editor.reload_from_disk()
+            self._after_reload(editor)
+            self._status(f"Reloaded {editor.display_name} from disk.")
+            return "reloaded"
+        if clicked is keep_btn:
+            editor._deferred_sig = None
+            return "save"
+        editor._deferred_sig = editor._stat_sig()
+        self._status(f"{editor.display_name} changed on disk — autosave is paused "
+                     "for it (File ▸ Reload from Disk, or save to overwrite).")
+        return "cancel"
+
+    def reload_current_from_disk(self) -> None:
+        editor = self.current_editor()
+        if editor is None or not editor.path:
+            return
+        if editor.isModified():
+            answer = QMessageBox.question(
+                self, "Reload from disk",
+                f"Discard your edits to {editor.display_name} and reload it from disk?")
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        editor.reload_from_disk()
+        editor._deferred_sig = None
+        self._after_reload(editor)
+        self._status(f"Reloaded {editor.display_name} from disk.")
 
     # --- auto-save -------------------------------------------------------
     def _autosave(self, editor: CodeEditor) -> None:
@@ -898,6 +1287,13 @@ class MainWindow(QMainWindow):
 
     def _do_autosave(self, editor: CodeEditor) -> None:
         if editor.path and editor.isModified():
+            # Never write over an edit made outside KhervePY (Claude Code, git,
+            # another editor): that would silently destroy it.
+            if editor.disk_state() == "changed":
+                if getattr(editor, "_deferred_sig", None) == editor._stat_sig():
+                    return                      # user said "decide later"
+                if self._resolve_conflict(editor) != "save":
+                    return
             try:
                 editor.save()
                 self._refresh_tab_title()
@@ -1051,41 +1447,156 @@ class MainWindow(QMainWindow):
         self._output_append(_decode(proc.readAllStandardOutput()))
         self._output_append(_decode(proc.readAllStandardError()), error=True)
 
-    def run_current(self) -> None:
+    # --- run configurations ----------------------------------------------
+    def _load_project_run_state(self) -> None:
+        """Load the project's run configurations and pinned interpreter."""
+        from khervepy import proc
+
+        root = self.project_root
+        proc.set_interpreter_override(root, self.settings.interpreter(root))
+        saved = [RunConfig.from_dict(d) for d in self.settings.run_configs(root)]
+        by_name = {c.name: c for c in saved}
+        merged = [by_name.pop(b.name, b) for b in rc.builtin_configs()]
+        merged += list(by_name.values())
+        self._run_configs = merged
+        self._refresh_run_box(self.settings.selected_run_config(root))
+        self._update_interpreter_indicator()
+
+    def _refresh_run_box(self, select: str = "") -> None:
+        if not hasattr(self, "run_box"):
+            return
+        select = select or (self.run_box.currentText() or rc.CURRENT_FILE)
+        self.run_box.blockSignals(True)
+        self.run_box.clear()
+        self.run_box.addItems([c.name for c in self._run_configs])
+        idx = self.run_box.findText(select)
+        self.run_box.setCurrentIndex(max(0, idx))
+        self.run_box.blockSignals(False)
+
+    def _selected_config(self) -> RunConfig:
+        name = self.run_box.currentText() if hasattr(self, "run_box") else rc.CURRENT_FILE
+        for cfg in self._run_configs:
+            if cfg.name == name:
+                return cfg
+        return self._run_configs[0]
+
+    def _on_run_config_picked(self, _index: int) -> None:
+        self.settings.set_selected_run_config(self.project_root, self.run_box.currentText())
+
+    def edit_run_configs(self) -> None:
+        from khervepy.run_dialogs import RunConfigDialog
+
+        dlg = RunConfigDialog(self.project_root, self._run_configs,
+                              self._selected_config().name, self)
+        if dlg.exec() != RunConfigDialog.DialogCode.Accepted:
+            return
+        self._run_configs = dlg.configs()
+        self.settings.set_run_configs(self.project_root,
+                                      [c.to_dict() for c in self._run_configs])
+        self.settings.set_selected_run_config(self.project_root, dlg.selected_name())
+        self._refresh_run_box(dlg.selected_name())
+        self._status("Run configurations saved.")
+
+    def choose_interpreter(self) -> None:
+        from khervepy import proc
+        from khervepy.run_dialogs import InterpreterDialog
+
+        root = self.project_root
+        dlg = InterpreterDialog(root, self.settings.interpreter(root), self)
+        if dlg.exec() != InterpreterDialog.DialogCode.Accepted:
+            return
+        path = dlg.selected()
+        self.settings.set_interpreter(root, path)
+        proc.set_interpreter_override(root, path)
+        self._update_interpreter_indicator()
+        self._auto_check_requirements()
+        self._status(f"Interpreter: {path or 'automatic'}")
+
+    def _update_interpreter_indicator(self) -> None:
+        """Show the interpreter the project will use, e.g. ``Python 3.13 (.venv)``."""
+        from khervepy import proc
+
+        if not hasattr(self, "interp_indicator"):
+            return
+        python = proc.python_executable(self.project_root)
+        if not python:
+            self.interp_indicator.setText("No Python — click to choose")
+            return
+        pinned = bool(proc.interpreter_override(self.project_root))
+        label = proc.interpreter_label(python, self.project_root, probe=False)
+        self.interp_indicator.setText(label + ("" if pinned else " · auto"))
+        self.interp_indicator.setToolTip(f"{python}\nClick to change the interpreter")
+
+    def _current_file_for_run(self) -> str:
         editor = self.current_editor()
-        if not editor:
-            self._status("Nothing to run — open a Python file first.")
-            return
-        if editor.isModified() or not editor.path:
-            self.save_current()
-        if not editor.path or not editor.path.endswith(".py"):
-            self._status("Run supports .py files.")
-            return
-        self._run_python_file(editor.path)
+        return editor.path if editor and editor.path else ""
+
+    def run_selected(self) -> None:
+        """The Run button / F5: launch the configuration picked in the toolbar."""
+        self._launch(self._selected_config())
+
+    def run_current(self) -> None:
+        """Run the file in the active tab, whatever configuration is selected."""
+        self._launch(self._run_configs[0])
+
+    def run_current_in_terminal(self) -> None:
+        cfg = RunConfig.from_dict(self._run_configs[0].to_dict())
+        cfg.in_terminal = True
+        self._launch(cfg)
+
+    def run_tests(self) -> None:
+        for cfg in self._run_configs:
+            if cfg.name == rc.RUN_TESTS:
+                self._launch(cfg)
+                return
 
     def _run_python_file(self, path: str) -> None:
+        """Run *path* as a plain script (used by the missing-module re-run)."""
+        self._launch(RunConfig(os.path.basename(path), target=path))
+
+    def _launch(self, cfg: RunConfig) -> None:
         from PyQt6.QtCore import QProcess, QProcessEnvironment
         from khervepy.proc import hide_console, python_executable
 
-        python = python_executable(self.project_root)
+        editor = self.current_editor()
+        if editor is not None and editor.isModified():
+            self.save_current()          # run what is on screen, not what was saved
+        current = self._current_file_for_run()
+        problem = rc.validate(cfg, current)
+        if problem:
+            self._status(problem)
+            return
+        python = cfg.interpreter or python_executable(self.project_root)
         if not python:
             self._no_python_message()
+            return
+        cmd = rc.build_command(cfg, python, self.project_root, current)
+        if cfg.kind == "script":
+            self._last_run_path = cmd.args[1]
+        else:
+            self._last_run_path = ""
+        self._last_run_cfg = cfg
+        self._run_python = python  # interpreter this run used (for auto-install)
+
+        if cfg.in_terminal:
+            self.terminal_dock.show()
+            self.terminal_dock.raise_()
+            self.terminal.send_command(rc.shell_line(cmd), echo=True)
+            self.terminal.view.setFocus()
+            self._status(f"Running {cfg.name} in the Terminal…")
             return
 
         self.output.clear()
         self.output_dock.show()
         self.output_dock.raise_()
-        self._status(f"Running {path}…")
-        self._last_run_path = path
-        self._run_python = python  # interpreter this run used (for auto-install)
+        self._status(f"Running {cfg.name}…")
 
         proc = QProcess(self)
         hide_console(proc)
         # Separate channels so stderr can be told apart and shown in red.
         proc.setProcessChannelMode(
             QProcess.ProcessChannelMode.SeparateChannels)
-        cwd = self.project_root or os.path.dirname(path)
-        proc.setWorkingDirectory(cwd)
+        proc.setWorkingDirectory(cmd.cwd)
         # Force unbuffered stdout/stderr so the program's prints stream into the
         # Output panel live; a pipe (not a console) otherwise block-buffers them,
         # leaving Output empty until the process exits. UTF-8 keeps tracebacks
@@ -1093,11 +1604,15 @@ class MainWindow(QMainWindow):
         env = QProcessEnvironment.systemEnvironment()
         env.insert("PYTHONUNBUFFERED", "1")
         env.insert("PYTHONIOENCODING", "utf-8")
+        for key, value in cmd.env.items():
+            env.insert(key, value)
         proc.setProcessEnvironment(env)
         # Echo the command first: which interpreter and which directory a run
         # used is the single most useful clue when it behaves differently from
         # a terminal, and it costs one line.
-        self._output_append(f'"{python}" -u "{path}"\n[cwd: {cwd}]\n\n')
+        shown_env = "".join(f"{k}={v} " for k, v in cmd.env.items())
+        self._output_append(f"{shown_env}{rc.shell_line(cmd, with_cwd=False)}\n"
+                            f"[cwd: {cmd.cwd}]\n\n")
         self._stream_output(proc)
         proc.errorOccurred.connect(lambda err: self._on_run_error(err, python))
         proc.finished.connect(self._on_run_finished)
@@ -1107,7 +1622,7 @@ class MainWindow(QMainWindow):
         # errorOccurred synchronously from start(), and arming afterwards would
         # overwrite the idle state that handler just restored.
         self._set_running(True)
-        proc.start(python, ["-u", path])
+        proc.start(python, cmd.args)
 
     def _on_run_error(self, err, python: str) -> None:
         """Report a QProcess-level failure in the Output panel.
@@ -1280,17 +1795,17 @@ class MainWindow(QMainWindow):
             )
             return
         self._status(f"Installed {pkg}.")
-        path = getattr(self, "_last_run_path", "")
-        if path and os.path.exists(path):
+        cfg = getattr(self, "_last_run_cfg", None)
+        if cfg is not None:
             answer = QMessageBox.question(
                 self, "Installed",
                 f"<b>{pkg}</b> was installed successfully.<br>"
-                "Re-run the script now?",
+                "Run it again now?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.Yes,
             )
             if answer == QMessageBox.StandardButton.Yes:
-                self._run_python_file(path)
+                self._launch(cfg)
 
     # --- requirements ----------------------------------------------------
     def check_requirements(self) -> None:
@@ -1587,6 +2102,8 @@ class MainWindow(QMainWindow):
             w = self.tabs.widget(i)
             if isinstance(w, CodeEditor):
                 w.apply_theme(name)
+        if self._split_editor is not None:
+            self._split_editor.apply_theme(name)
         self._apply_window_theme(name)
         self._status(f"Theme: {name}")
 
@@ -1602,6 +2119,10 @@ class MainWindow(QMainWindow):
         # The project tree needs its palette themed, not just the stylesheet.
         if hasattr(self, "tree"):
             self.tree.apply_theme(theme)
+        # The terminal paints its own cells, so it takes the theme directly.
+        term = getattr(self, "terminal", None)
+        if term is not None and hasattr(term, "apply_theme"):
+            term.apply_theme(theme)
         # Run/Stop carry status colours that must survive a theme recolour.
         self._update_run_icons()
 
@@ -1934,10 +2455,15 @@ class MainWindow(QMainWindow):
             if not (isinstance(w, CodeEditor) and w.isModified()):
                 continue
             if w.path:
-                try:
-                    w.save()
-                except OSError:
-                    pass
+                decision = self._resolve_conflict(w)
+                if decision == "cancel":
+                    event.ignore()
+                    return
+                if decision == "save":
+                    try:
+                        w.save()
+                    except OSError:
+                        pass
                 continue
             self.tabs.setCurrentIndex(i)
             answer = QMessageBox.question(

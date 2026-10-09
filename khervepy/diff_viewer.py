@@ -64,7 +64,8 @@ class DiffViewer(QWidget):
         self.header.setWordWrap(True)
         layout.addWidget(self.header)
 
-        mono = QFont("Consolas, DejaVu Sans Mono, Menlo, monospace", 10)
+        from khervepy.fonts import mono_font
+        mono = mono_font(10)
         mono.setStyleHint(QFont.StyleHint.Monospace)
         self.view = QPlainTextEdit()
         self.view.setReadOnly(True)

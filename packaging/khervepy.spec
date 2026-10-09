@@ -34,7 +34,15 @@ a = Analysis(
     pathex=[ROOT],
     binaries=[],
     datas=datas,
-    hiddenimports=["PyQt6.Qsci"],
+    hiddenimports=[
+        "PyQt6.Qsci",
+        # Terminal emulator (macOS/Linux) and OS keychain backends.
+        "pyte",
+        "keyring.backends.macOS",
+        "keyring.backends.Windows",
+        "keyring.backends.SecretService",
+        "keyring.backends.kwallet",
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

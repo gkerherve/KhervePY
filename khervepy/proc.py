@@ -226,10 +226,173 @@ def in_own_venv() -> bool:
     return sys.prefix != getattr(sys, "base_prefix", sys.prefix)
 
 
+# --- per-project interpreter choice -----------------------------------------
+# The main window loads the user's pick for the open project from settings and
+# registers it here, so every caller of ``python_executable`` (Run, Debug, pip,
+# requirements check) agrees without each one having to know about settings.
+_OVERRIDES: dict[str, str] = {}
+
+
+def _key(project_root: str | None) -> str:
+    return os.path.normcase(os.path.abspath(project_root)) if project_root else ""
+
+
+def set_interpreter_override(project_root: str | None, path: str) -> None:
+    """Pin *path* as the interpreter for *project_root* ("" clears the pin)."""
+    key = _key(project_root)
+    if not key:
+        return
+    if path:
+        _OVERRIDES[key] = path
+    else:
+        _OVERRIDES.pop(key, None)
+
+
+def interpreter_override(project_root: str | None) -> str:
+    """The pinned interpreter for *project_root*, or "" if none (or it vanished)."""
+    path = _OVERRIDES.get(_key(project_root), "")
+    return path if path and os.path.isfile(path) else ""
+
+
+def interpreter_candidates(project_root: str | None) -> list[str]:
+    """Every Python worth offering in the picker, best-guess first, de-duplicated.
+
+    Project virtualenvs, then ``PATH``, then the places each tool installs to:
+    Homebrew, the python.org framework, pyenv, conda/mamba, uv and — on
+    Windows — the registry and the standard install directories.
+    """
+    found: list[str] = []
+    real_seen: set[str] = set()
+
+    def add(path: str) -> None:
+        if not (path and os.path.isfile(path) and os.access(path, os.X_OK)
+                and not is_store_stub(path) and path not in found):
+            return
+        # python3, python3.13 and /usr/local/bin/python3 are often one binary;
+        # list it once. (A venv's python resolves to its base, so venvs are
+        # exempt — they are different environments.)
+        is_venv = os.path.isfile(os.path.join(
+            os.path.dirname(os.path.dirname(path)), "pyvenv.cfg"))
+        real = os.path.realpath(path)
+        if not is_venv:
+            if real in real_seen:
+                return
+            real_seen.add(real)
+        found.append(path)
+
+    sub, exe = ("Scripts", "python.exe") if _IS_WINDOWS else ("bin", "python")
+    if project_root:
+        for name in ("venv", ".venv", "env", ".env"):
+            add(os.path.join(project_root, name, sub, exe))
+    for path in _path_pythons():
+        add(path)
+    for path in _registry_pythons() + _wellknown_pythons():
+        add(path)
+    if not _IS_WINDOWS:
+        home = os.path.expanduser("~")
+        patterns = [
+            "/opt/homebrew/bin/python3*", "/usr/local/bin/python3*",
+            "/opt/homebrew/opt/python@*/bin/python3*",
+            "/Library/Frameworks/Python.framework/Versions/*/bin/python3",
+            "/opt/local/bin/python3*",
+            os.path.join(home, ".pyenv/versions/*/bin/python"),
+            os.path.join(home, ".local/share/uv/python/*/bin/python3"),
+        ]
+        # /usr/bin/python3 is a shim that pops an "install the Command Line
+        # Tools" prompt when probed on a Mac that has none; only offer it then.
+        if sys.platform != "darwin" or os.path.isdir("/Library/Developer/CommandLineTools"):
+            patterns.append("/usr/bin/python3")
+        for base in ("miniconda3", "anaconda3", "miniforge3", "mambaforge",
+                     "opt/anaconda3", ".conda"):
+            patterns.append(os.path.join(home, base, "bin/python"))
+            patterns.append(os.path.join(home, base, "envs/*/bin/python"))
+        for pattern in patterns:
+            for path in sorted(glob.glob(pattern)):
+                # python3-config, python3.13-config … are not interpreters.
+                base = os.path.basename(path)
+                if "config" not in base and "intel64" not in base:
+                    add(path)
+    return found
+
+
+def _version_from_path(path: str) -> str:
+    """Best-effort ``3.13`` from the path alone — never runs the interpreter."""
+    import re
+
+    real = os.path.realpath(path).replace("\\", "/")
+    for pattern in (r"/Versions/(\d+\.\d+)/", r"python@(\d+\.\d+)", r"/python(\d+\.\d+)",
+                    r"/Python(\d)(\d+)/"):
+        m = re.search(pattern, real) or re.search(pattern, path.replace("\\", "/"))
+        if m:
+            return ".".join(m.groups())
+    return ""
+
+
+def interpreter_label(path: str, project_root: str | None = None,
+                      probe: bool = True) -> str:
+    """A human name: ``Python 3.13.1 (.venv)`` / ``Python 3.12.6 (Homebrew)``.
+
+    Reads ``pyvenv.cfg`` for virtualenvs (instant); otherwise asks the
+    interpreter, with a short timeout so a broken one cannot hang the UI.
+    ``probe=False`` never starts a process (safe on the GUI thread): the
+    version then comes from the path, or is left out.
+    """
+    version = ""
+    cfg = os.path.join(os.path.dirname(os.path.dirname(path)), "pyvenv.cfg")
+    if os.path.isfile(cfg):
+        try:
+            with open(cfg, encoding="utf-8", errors="replace") as handle:
+                for line in handle:
+                    key, _, value = line.partition("=")
+                    if key.strip() in ("version", "version_info"):
+                        version = ".".join(value.strip().split(".")[:3])
+                        break
+        except OSError:
+            pass
+    if not version and not probe:
+        version = _version_from_path(path)
+        where = _where(path, project_root)
+        return "Python" + (f" {version}" if version else "") + (f" ({where})" if where else "")
+    if not version:
+        try:
+            out = subprocess.run([path, "--version"], capture_output=True,
+                                 text=True, timeout=4, **{
+                                     k: v for k, v in subprocess_flags().items()
+                                     if k in ("creationflags", "startupinfo")})
+            version = (out.stdout or out.stderr).strip().replace("Python ", "")
+        except (OSError, subprocess.SubprocessError):
+            version = "?"
+    where = _where(path, project_root)
+    return f"Python {version}" + (f" ({where})" if where else "")
+
+
+def _where(path: str, project_root: str | None) -> str:
+    home = os.path.expanduser("~")
+    parent = os.path.dirname(os.path.dirname(path))
+    if os.path.isfile(os.path.join(parent, "pyvenv.cfg")):
+        name = os.path.basename(parent)
+        if project_root and os.path.dirname(parent) == project_root.rstrip("/\\"):
+            return name
+        return f"venv {name}"
+    if "/envs/" in path.replace("\\", "/"):
+        return "conda " + os.path.basename(parent)
+    real = os.path.realpath(path)
+    for token, name in (("/library/frameworks/python.framework", "python.org"), ("homebrew", "Homebrew"),
+                        ("cellar", "Homebrew"), (".pyenv", "pyenv"), ("/uv/", "uv"),
+                        ("conda", "conda"), ("miniforge", "conda"),
+                        ("/opt/local", "MacPorts"), ("/usr/bin", "system"),
+                        ("applications/xcode", "system"),
+                        ("commandlinetools", "system")):
+        if token in real.lower():
+            return name
+    return "~" + path[len(home):] if path.startswith(home) else ""
+
+
 def python_executable(project_root: str | None = None) -> str:
     """Return a usable Python interpreter path for running the project's code.
 
-    A project's **own virtualenv wins** — like a real IDE's project
+    An interpreter the user **picked for the project** (status bar ▸ Python)
+    wins over everything. Otherwise a project's **own virtualenv wins** — like a real IDE's project
     interpreter — so each project runs in the environment where its declared
     dependencies live, even when KhervePY itself is launched from a different
     interpreter that happens to be missing them.
@@ -242,6 +405,10 @@ def python_executable(project_root: str | None = None) -> str:
 
     Returns "" if none is found.
     """
+    pinned = interpreter_override(project_root)
+    if pinned:
+        return pinned
+
     venv = project_venv_python(project_root)
     if venv:
         return venv

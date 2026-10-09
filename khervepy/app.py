@@ -45,10 +45,14 @@ def _selftest() -> int:
     """Start the real window offscreen and check the parts a frozen build can
     lose: QScintilla, the lexers, the bundled icon. Used by the CI smoke test.
 
-    Settings go to a throw-away folder so this never touches (or reads) the
-    user's own preferences.
+    Settings go to a throw-away .ini (``KHERVEPY_SETTINGS_FILE``) so this never
+    touches (or reads) the user's own preferences.
     """
     import tempfile
+    import time
+
+    # Never touch the real keychain from a self-test (CI has no login keychain).
+    os.environ["KHERVEPY_NO_KEYRING"] = "1"
 
     from PyQt6.QtCore import QSettings, QTimer
     from PyQt6.QtWidgets import QApplication
@@ -56,13 +60,15 @@ def _selftest() -> int:
     from khervepy import __app_name__, __version__
 
     scratch = tempfile.mkdtemp(prefix="khervepy-selftest-")
-    QSettings.setDefaultFormat(QSettings.Format.IniFormat)
-    QSettings.setPath(QSettings.Format.IniFormat,
-                      QSettings.Scope.UserScope, scratch)
+    settings_file = os.path.join(scratch, "settings.ini")
+    os.environ["KHERVEPY_SETTINGS_FILE"] = settings_file
 
     app = QApplication(sys.argv[:1])
     app.setApplicationName(__app_name__)
     app.setOrganizationName("Gwilherm Kerherve")
+    # No network from a self-test: the start-up update check would otherwise
+    # still be running on a worker thread when we quit.
+    QSettings(settings_file, QSettings.Format.IniFormat).setValue("update/check", False)
 
     from khervepy.main_window import MainWindow
     from khervepy.resources import icon_path
@@ -86,6 +92,39 @@ def _selftest() -> int:
     if not icon_path():
         problems.append("application icon not bundled")
 
+    # --- the terminal runs a real command (PTY + emulator) -----------------------
+    term = window.terminal
+    if hasattr(term.view, "_screen"):
+        term.send_command("echo khervepy-selftest-$((6*7))")
+        deadline = time.time() + 10
+        while time.time() < deadline:
+            app.processEvents()
+            if "khervepy-selftest-42" in "\n".join(term.view._screen.display):
+                break
+            time.sleep(0.02)
+        else:
+            problems.append("the terminal did not run a command")
+    term.stop()
+
+    # --- run configurations, interpreter discovery, split view, encodings --------
+    if window.run_box.count() < 2:
+        problems.append("run configurations missing")
+    from khervepy import proc, secrets
+    if not proc.interpreter_candidates(os.path.dirname(sample)) and not getattr(sys, "frozen", False):
+        problems.append("no Python interpreter discovered")
+    if editor is not None:
+        window.split_editor()
+        if window._split_editor is None or window._split_editor.text() != editor.text():
+            problems.append("split view did not share the document")
+        window.close_split()
+        if editor.encoding != "utf-8" or editor.eol != "\n":
+            problems.append(f"encoding/EOL detection wrong: {editor.encoding} {editor.eol!r}")
+    try:
+        import keyring  # noqa: F401  (the platform backend is bundled)
+    except ImportError:
+        problems.append("keyring not bundled")
+
+    window.close()          # joins worker threads; an abort at exit would hide the result
     if problems:
         for line in problems:
             sys.stderr.write(f"selftest FAILED: {line}\n")

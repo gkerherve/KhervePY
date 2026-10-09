@@ -75,7 +75,8 @@ class Debugger(QWidget):
         controls.addStretch(1)
         layout.addLayout(controls)
 
-        mono = QFont("Consolas, DejaVu Sans Mono, Menlo, monospace", 10)
+        from khervepy.fonts import mono_font
+        mono = mono_font(10)
         mono.setStyleHint(QFont.StyleHint.Monospace)
 
         self.view = QPlainTextEdit()
@@ -103,7 +104,8 @@ class Debugger(QWidget):
     def set_cwd(self, path: str) -> None:
         self.cwd = path
 
-    def start(self, path: str) -> None:
+    def start(self, path: str, args=(), env: dict | None = None,
+              cwd: str | None = None) -> None:
         if not path or not path.endswith(".py"):
             self._append("[Debugger runs .py files only]\n")
             return
@@ -117,10 +119,16 @@ class Debugger(QWidget):
         self._proc = QProcess(self)
         hide_console(self._proc)
         self._proc.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
-        self._proc.setWorkingDirectory(self.cwd)
+        self._proc.setWorkingDirectory(cwd or self.cwd)
+        if env:
+            from PyQt6.QtCore import QProcessEnvironment
+            penv = QProcessEnvironment.systemEnvironment()
+            for key, value in env.items():
+                penv.insert(key, value)
+            self._proc.setProcessEnvironment(penv)
         self._proc.readyReadStandardOutput.connect(self._read)
         self._proc.finished.connect(self._on_finished)
-        self._proc.start(python, ["-u", "-m", "pdb", path])
+        self._proc.start(python, ["-u", "-m", "pdb", path, *args])
         self._append(f"[pdb {os.path.basename(path)}]\n")
         self._set_running(True)
 

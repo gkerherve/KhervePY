@@ -15,7 +15,7 @@ import shutil
 import subprocess
 import sys
 
-from PyQt6.QtCore import QDir, QFileInfo, QMimeData, Qt, QUrl, pyqtSignal
+from PyQt6.QtCore import QDir, QFile, QFileInfo, QMimeData, Qt, QUrl, pyqtSignal
 from PyQt6.QtGui import (
     QAction,
     QColor,
@@ -358,23 +358,41 @@ class FileTree(QTreeView):
             self.changed.emit()
 
     def _delete(self) -> None:
+        """Move the selection to the Trash / Recycle Bin (recoverable).
+
+        Only when the OS cannot trash an item (a network share, say) is a
+        permanent delete offered, behind its own explicit confirmation.
+        """
         paths = self._selected_paths()
         if not paths:
             return
         listing = "\n".join(os.path.basename(p) for p in paths[:12])
         if len(paths) > 12:
             listing += f"\n… and {len(paths) - 12} more"
+        where = {"darwin": "the Trash", "win32": "the Recycle Bin"}.get(sys.platform, "the Trash")
         answer = QMessageBox.question(
             self, "Delete",
-            f"Permanently delete these {len(paths)} item(s)?\n\n{listing}",
+            f"Move these {len(paths)} item(s) to {where}?\n\n{listing}",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
         if answer != QMessageBox.StandardButton.Yes:
             return
         for p in paths:
+            trashed, _where = QFile.moveToTrash(p)   # PyQt6 returns (ok, new path)
+            if trashed:
+                continue
+            forever = QMessageBox.question(
+                self, "Can't use the Trash",
+                f"{os.path.basename(p)} cannot be moved to {where} (for example it is "
+                "on a network drive).\n\nDelete it permanently instead? This cannot be undone.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if forever != QMessageBox.StandardButton.Yes:
+                continue
             try:
-                if os.path.isdir(p):
+                if os.path.isdir(p) and not os.path.islink(p):
                     shutil.rmtree(p)
                 else:
                     os.remove(p)

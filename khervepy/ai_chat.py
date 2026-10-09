@@ -203,7 +203,8 @@ class AIChat(QWidget):
             "Ask for code or paste an error…  (Ctrl+Enter to send)"
         )
         self.input.setFixedHeight(64)
-        mono = QFont("Consolas, DejaVu Sans Mono, monospace", 10)
+        from khervepy.fonts import mono_font
+        mono = mono_font(10)
         self.input.setFont(mono)
         bottom.addWidget(self.input, 1)
         self.send_btn = QPushButton("Send")

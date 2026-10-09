@@ -3,6 +3,61 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.42.0 — 2026-10-09
+
+Closes the gaps that kept KhervePY from replacing PyCharm for day-to-day work.
+
+### Added
+- **A real terminal (macOS and Linux).** The shell now runs on a pseudo-terminal
+  drawn by a VT emulator (`pyte`), so `claude`, `python -i`, `vim`/`less`, `htop`,
+  colours, Ctrl-C and job control all work. Scrollback, selection, Cmd+C / Cmd+V
+  (bracketed paste), Option+←/→ by word, Cmd+K to clear, Shift+PageUp/Down. It
+  runs a login shell, so Homebrew and your Pythons are on `PATH`. A project
+  switch only types `cd` when the shell is at its prompt, never into a running
+  program. Windows keeps the pipe terminal.
+- **Run configurations.** Script, module (`python -m …`) or pytest, each with
+  arguments, environment variables, working directory, interpreter, and an
+  option to run in the Terminal (so `input()` works). Pick one in the toolbar;
+  F5 runs it. *Run ▸ Edit Run Configurations…*, *Run tests (pytest)*, *Run
+  current file in Terminal*. `$FILE`, `$FILEDIR`, `$PROJECT` are expanded. Debug
+  uses the selected script configuration's arguments, directory and environment.
+- **Per-project interpreter picker.** The status bar shows the Python in use
+  (click it, or *Run ▸ Select Python Interpreter…*): project virtualenvs,
+  Homebrew, python.org, pyenv, conda, uv, or Browse. Run, Debug, Packages and the
+  requirements check all follow the choice.
+- **External changes are picked up.** A file edited outside KhervePY (Claude Code,
+  `git checkout`, another editor) reloads in place — caret and scroll kept. If you
+  have unsaved edits too, you choose: reload, keep yours, or decide later.
+  **Auto-save and Save never overwrite a file that changed on disk** without that
+  choice. *File ▸ Reload from Disk*.
+- **Encoding and line endings are preserved.** UTF-8, UTF-8 with BOM, UTF-16,
+  Windows-1252 and Latin-1 files round-trip byte for byte (CRLF stays CRLF); the
+  status bar shows both and lets you change how the file is saved. Before, a
+  non-UTF-8 file was silently corrupted on save.
+- **Multiple cursors.** Cmd-click adds a caret, Alt-drag selects a column,
+  *Add Next Occurrence* (Cmd+J) and *Select All Occurrences* (Cmd+Shift+L).
+- **Split editor.** *Code ▸ Split Editor Right* opens a second view of the same
+  document beside the tabs (each with its own caret and scroll).
+- **Large and binary files.** Over 2 MB opens as plain text (no lexer, folding or
+  change bar); over 40 MB is refused; a binary file is not opened as text.
+
+### Changed
+- **Delete moves to the Trash / Recycle Bin** instead of deleting for good.
+- **The GitHub token and AI API keys live in the OS keychain** (macOS Keychain,
+  Windows Credential Locker, Secret Service). Existing values are moved there
+  automatically and removed from the preferences file; if no keychain is
+  available they stay where they were.
+- **macOS shortcuts that clashed with the system were remapped:** Replace is
+  ⌥⌘F (was ⌘H, Hide), Menu Bar ⌥⌘M (was ⌘M, Minimise), Terminal ⌃` (was ⌘`,
+  window switching).
+
+### Fixed
+- **The editor used a proportional font on macOS.** The font was requested with a
+  CSS-style list (`"Consolas, Menlo, monospace"`), which Qt treats as one
+  non-existent family. A proper monospace is chosen now, everywhere.
+- Opening KhervePY with a file argument (or *Open With*) skipped loading the
+  project's run configurations and interpreter.
+
 ## 0.41.0 — 2026-10-09
 
 ### Added
