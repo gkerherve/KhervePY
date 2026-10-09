@@ -1744,7 +1744,8 @@ class MainWindow(QMainWindow):
             return True
 
         try:
-            path = updater.download(release.installer, report)
+            path = updater.download(release.installer, report,
+                                    sha256=release.sha256)
         except InterruptedError:
             self._status("Update cancelled.")
             return
@@ -1761,8 +1762,8 @@ class MainWindow(QMainWindow):
         answer = QMessageBox.question(
             self, "Install now?",
             f"{__app_name__} {release.version} has been downloaded.<br><br>"
-            "The installer needs to replace the running program, so KhervePY "
-            "will close.<br><br>Save any work first — close now and install?",
+            f"{updater.install_prompt()}<br><br>"
+            "Save any work first — close now and install?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.Yes)
         if answer != QMessageBox.StandardButton.Yes:

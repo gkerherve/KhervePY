@@ -3,6 +3,28 @@
 All notable changes to KhervePY are recorded here. The version number is bumped
 on every push, per the KherveTools workflow.
 
+## 0.41.0 — 2026-10-09
+
+### Added
+- **KhervePY for macOS.** A native `.app` in a drag-to-install disk image, one
+  for Apple Silicon and one for Intel (`KhervePY-macOS-arm64.dmg`,
+  `KhervePY-macOS-x86_64.dmg`). Built by `packaging/build_macos.py`
+  (PyInstaller `BUNDLE`, inside-out signing, `create-dmg`) and by the
+  *macOS build* GitHub workflow. Ad-hoc signed for now: the first launch is
+  right-click ▸ Open.
+- **Open With ▸ KhervePY** and dropping a file on the Dock icon open the file
+  (they arrive as an Apple Event on macOS, never on the command line).
+- `KhervePY --version` and `--selftest` (opens a window offscreen and checks
+  the editor, lexers and icon) — used by the build's smoke test.
+
+### Changed
+- **Update check on macOS** reads the newest `macos-v*` release, picks the DMG
+  for this Mac's architecture (arm64 even under Rosetta), verifies its SHA-256
+  and opens it. Windows is unchanged.
+- **A Finder-launched app now finds Homebrew and python.org tools.** macOS gives
+  GUI apps a bare `PATH`, so `git` and `python3` from Homebrew were invisible;
+  the usual directories are appended at start-up.
+
 ## 0.40.1 — 2026-08-27
 
 ### Fixed

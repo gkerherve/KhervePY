@@ -1,0 +1,97 @@
+name: macOS build
+
+# PyInstaller cannot cross-compile, so the .app has to be produced on a Mac.
+# Both architectures are built: macos-14 is Apple Silicon (arm64),
+# macos-15-intel the x86_64 image, so Intel users get a native DMG rather
+# than running Rosetta. (macos-15-intel is GitHub's last x86_64 image and goes
+# away in August 2027; after that this matrix is arm64 only.)
+#
+# This workflow only BUILDS. It uploads the DMGs as workflow artifacts and
+# never creates a release: publishing is a deliberate step done by hand from
+# those artifacts (`gh release create macos-v<ver> --latest=false ...`, never
+# "latest" — that would steal releases/latest from the Windows installer).
+#
+#   git tag macos-v0.41.0 && git push origin macos-v0.41.0
+#   (or Actions > macOS build > Run workflow)
+
+on:
+  push:
+    tags:
+      - "macos-v*"
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false     # an Intel failure should not hide a good arm64 build
+      matrix:
+        include:
+          - runner: macos-14
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # CFBundleVersion is the commit count
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install create-dmg
+        run: brew install create-dmg
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+          python -c "import PyQt6.QtCore as c, PyQt6.Qsci; print('PyQt6', c.PYQT_VERSION_STR)"
+
+      - name: Build the .app and the DMG
+        run: python packaging/build_macos.py
+
+      - name: Read the version back
+        run: echo "VERSION=$(python -c 'from khervepy import __version__; print(__version__)')" >> "$GITHUB_ENV"
+
+      - name: Check the bundle
+        # What can actually be wrong in a finished bundle: no Info.plist, a
+        # broken signature, or a binary built for the other architecture,
+        # which users meet as "the app is damaged".
+        run: |
+          set -euo pipefail
+          APP=dist/KhervePY.app
+          test -x "$APP/Contents/MacOS/KhervePY"
+          plutil -p "$APP/Contents/Info.plist" \
+            | grep -E 'CFBundleIdentifier|CFBundleShortVersionString'
+          plutil -extract CFBundleShortVersionString raw "$APP/Contents/Info.plist" \
+            | grep -qx "$VERSION"
+          codesign --verify --deep --strict "$APP"
+          file -b "$APP/Contents/MacOS/KhervePY" | grep -q '${{ matrix.arch }}'
+          find "$APP" -maxdepth 6 -name 'Qsci*.so' | grep -q .
+
+      - name: Smoke-test the frozen app
+        # Starts the real window offscreen, opens a .py file and checks the
+        # QScintilla lexer and the bundled icon. A missing hidden import only
+        # shows up when the code that needs it runs.
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          set -euo pipefail
+          dist/KhervePY.app/Contents/MacOS/KhervePY --version | grep -q "$VERSION"
+          dist/KhervePY.app/Contents/MacOS/KhervePY --selftest
+          codesign --verify --deep --strict dist/KhervePY.app   # nothing written inside the bundle
+
+      - name: Upload the DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: KhervePY-${{ env.VERSION }}-macOS-${{ matrix.arch }}
+          path: |
+            dist/KhervePY-*macOS-${{ matrix.arch }}.dmg
+            dist/KhervePY-*macOS-${{ matrix.arch }}.dmg.sha256
+            dist/KhervePY-macOS-${{ matrix.arch }}.json
+          if-no-files-found: error
